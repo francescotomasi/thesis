@@ -1,0 +1,1081 @@
+---
+title: "Stm_DiLiberatore_Model"
+author: "Vincenzo Favara"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 0: Setting the workenvironment and loading the environment
+
+```{r Installing packages, include = FALSE}
+install.packages(c("stm", "dplyr", "ggplot2", "tidytext", "tidyr", "tidyverse", "data.table", "haven", "readxl", "quanteda", "text2map", "quanteda.textplots", "quanteda.textstats", "text2vec", "fpc", "factoextra", "textmineR"))
+# Installazione del pacchetto principale
+install.packages("quanteda")
+
+# Installazione del pacchetto specifico per le statistiche testuali (necessario per textstat_simil)
+install.packages("quanteda.textstats")
+
+# Installazione del pacchetto per le visualizzazioni (opzionale, per i wordcloud)
+install.packages("quanteda.textplots")
+```
+
+```{r Loading packages, include = FALSE}
+library(stm)
+library(dplyr)
+library(ggplot2)
+library(tidytext)
+library(tidyr)
+library(tidyverse)
+library(data.table)
+library(haven)
+library(readxl)
+library(quanteda) 
+library(quanteda.textplots) 
+library(quanteda.textstats) 
+library(text2map)
+library(text2vec)
+library(fpc) 
+library(factoextra) 
+library(textmineR) 
+```
+
+```{r Environment Di Liberatore: load and check identity with expected topics proportion}
+## Load Environment of Elena
+load("C:/Users/vicio/Desktop/Rev_STM/Processed_data/environment_diLiberatore")
+
+## Check identity with the model in the thesis - confirmed
+plot(model_20K, type = "summary", xlim = c(0, .3), main = "Model 1")
+```
+
+---
+
+## Part 1: Inspecting differences with Favara and Tomasi (2026) 
+
+```{r Inspect items}
+## Inspect stoplist
+head(words) # Di Liberatore final stoplist which is compared with custom_stops_en
+## compared with Favara and Tomasi (2026) stoplist (1190) this is 1184 words long
+## excluding precariousness, our list was 6 words longer than the final Di Liberatore stoplist
+
+## Inspect vocabulary
+head(vocab) # Di Liberatore final vocabulary, which is compared with vocab(tf)
+## Compared with our vocabulary (1016), Di Liberatore is almost 200 words longer (861)
+## this could be the effect of the final more restrictive stoplist (see above)
+
+## Inspect documents list
+head(ans_lis_filter) # Di liberatore final documents list, which is compared with our ans_list_filter
+## Compared with out list (2476) which is 17 documents longer than Di Liberatore (2459)
+## This difference ratio might result from a combination of stoplist - and lower.threshold choices (2) in stm::prepDocuments on the output of stm::textProcessor?
+
+
+# **CONCLUSION**:
+# it is the stoplist (words) the removes so many documents there is not any added lower.thresh = x
+# See results from textpreprocessed in emotion article: 
+# # Removing 720 of 1581 terms (720 of 16532 tokens) due to frequency 
+# Removing 14 Documents with No Words 
+# Your corpus now has 2459 documents, 861 terms and 15812 tokens.
+```
+
+```{r covariates in prevalence - precarity drivers dummy}
+## Vulnerability normalised index (higher risk like in dummy subjective precarity)
+meta |> 
+  count(normepres) 
+  
+meta <- meta |>
+  mutate(
+    dum_normepres = if_else(normepres > 0.8, 1, 0)) 
+
+meta |> 
+  count(dum_normepres)
+
+## Job Insecurity (higher gravity vs all)
+meta |> 
+  count(jobinsec)
+
+meta <- meta |> 
+  mutate(dum_jobinsec = if_else(jobinsec %in% c(1, 2), 1, 0))
+
+meta |> 
+  count(dum_jobinsec)
+
+## Making ends meet (higher difficulty vs all) 
+meta |> 
+  count(endmeet)
+
+meta <- meta |> 
+  mutate(dum_endmeet = if_else(endmeet %in% c(1, 2), 1, 0))
+
+meta |> 
+  count(dum_endmeet)
+
+## Capacity to pay unexpected expenses ("alone" vs all)
+meta |> 
+  count(unexpmix)
+
+meta <- meta |> 
+  mutate(dum_unexpmix = if_else(unexpmix %in% c(1), 1, 0))
+
+meta |> 
+  count(dum_unexpmix)
+
+## Economic indipendence, it does not need any dummy recode
+meta |> 
+  count(ecoind)
+
+meta <- meta |> 
+  mutate(dum_ecoind = if_else(ecoind %in% c(1), 1, 0))
+
+meta |> 
+  count(dum_ecoind)
+
+## Transform each variable in a factor (if not the estimate effect count it as numeric continous variable)
+meta <- meta |>
+  mutate(
+    dum_normepres = factor(dum_normepres, levels = c(0,1)),
+    dum_jobinsec  = factor(dum_jobinsec,  levels = c(0,1)),
+    dum_endmeet   = factor(dum_endmeet,   levels = c(0,1)),
+    dum_unexpmix  = factor(dum_unexpmix,  levels = c(0,1)),
+    dum_ecoind    = factor(dum_ecoind,    levels = c(0,1))
+  )
+
+```
+
+```{r covariates in prevalence - sociodemographic dummy}
+## Gender; it does not need any recode 
+meta |> 
+  count(gender)
+
+meta <- meta |> 
+  mutate(dum_gender = if_else(gender %in% c(1), 1, 0))
+
+meta |> 
+  count(dum_gender)
+
+## Age class (threshold below vs above 30 years old)
+meta |> 
+  count(ageyear)
+
+meta <- meta |> 
+  mutate(age_dum = ifelse(ageyear >=30, 1, 0)
+         )
+
+meta |> 
+  count(age_dum)
+
+## Migration background (autoctonous vs migrant)
+meta |> 
+  count(migrant)
+
+meta <- meta |> 
+  mutate(migr_dum = ifelse(migrant == 3, 1, 0)
+         )
+
+meta |> 
+  count(migr_dum)
+
+## Transformation in factor, as above
+meta <- meta |>
+  mutate(
+    dum_gender = factor(dum_gender, levels = c(0, 1)),
+    age_dum    = factor(age_dum,    levels = c(0, 1)),
+    migr_dum   = factor(migr_dum,   levels = c(0, 1))
+  )
+```
+
+```{r Likert scale of precarity - dummy and normalised index}
+## Scale of subjectively perceived precarity - dummy
+meta |> 
+  count(prec)
+
+meta <- meta |> 
+  mutate(dum_prec = ifelse(prec >= 8, 1, 0)
+         )
+meta |> 
+  count(dum_prec)
+
+## Transfrom into a factor
+meta <- meta |>
+  mutate(
+    dum_prec = factor(dum_prec, levels = c(0, 1))
+  )
+
+## Scale of subjectively perceived precarity - normalised index
+meta <- meta |>
+  mutate(
+    normprec = (prec - min(prec, na.rm = TRUE)) /
+                (max(prec, na.rm = TRUE) - min(prec, na.rm = TRUE))
+  )
+
+meta |> 
+  count(normprec)
+```
+
+```{r Save Di Liberatore topics inspection and final base model - without covariates}
+## save for further inspection topics' diagnostics
+saveRDS(findingk, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/findingk.rds")
+findingk <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/findingk.rds")
+
+## Criteria to choose optimal topic (Roberts et al., 2019: 34-35)
+View(findingk$results)
+topic_diagnostic <- plot(findingk)
+
+# Save the model 1 - no covariates -
+saveRDS(model_20K, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_1_stm_20k_no_covariates_DiLiberatore.rds")
+model_1 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_1_stm_20k_no_covariates_DiLiberatore.rds")
+```
+
+## Part 2: Re-estimating the models (with covariates in prevalence)
+
+```{r Nested Model with Covariates in Prevalence 20k - sociodemographic characteristics}
+# Covariate - basic model with included gender distinction
+model_7 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ dum_gender,  
+               data = meta,
+               verbose = FALSE,seed=2024)
+saveRDS(model_7, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_7_stm_20_gender_DiLiberatore.rds")
+
+# Covariate - basic model with included age distinction
+model_8 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ age_dum,  
+               data = meta,
+               verbose = FALSE,seed=2024)
+saveRDS(model_8, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_8_stm_20_age_DiLiberatore.rds")
+
+# Covariate - basic model with included migration background distinction
+model_9 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ migr_dum,  
+               data = meta,
+               verbose = FALSE,seed=2024)
+saveRDS(model_9, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_9_stm_20_migration_DiLiberatore.rds")
+```
+
+```{r Nested Model with Covariates in Prevalence 20k - precarity drivers}
+# Covariate - normalised vulnerability index from Epres-scale
+model_2 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ dum_normepres,  
+               data = meta,
+               verbose = FALSE,seed=2024)
+
+saveRDS(model_2, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_2_stm_20k_vuln_DiLiberatore.rds")
+
+# Covariate - included perceived job insecurity
+model_3 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ dum_normepres + dum_jobinsec,  
+               data = meta,
+               verbose = FALSE,seed=2024)
+
+saveRDS(model_3, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_3_stm_20k_vuln_jobinsec_DiLiberatore.rds")
+
+# Covariate - included difficulty in making ends meet
+model_4 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ dum_normepres + dum_jobinsec + dum_endmeet,  
+               data = meta,
+               verbose = FALSE,seed=2024)
+
+saveRDS(model_4, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_4_stm_20k_vuln_jobinsec_endmeet_DiLiberatore.rds")
+
+# Covariate - included capacity to individually pay unexpecte expenses
+model_5 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ dum_normepres + dum_jobinsec + dum_endmeet + dum_unexpmix,
+               data = meta,
+               verbose = FALSE,seed=2024)
+
+saveRDS(model_5, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_5_stm_20k_vuln_jobinsec_endmeet_unexpmix_DiLiberatore.rds")
+
+# Covariate - included feeling to be economic of indipendence from family of origin
+model_6 <- stm(documents = docs,
+               vocab = vocab, 
+               K = 20,
+               prevalence = ~ dum_normepres + dum_jobinsec + dum_endmeet + dum_unexpmix + dum_ecoind,  
+               data = meta,
+               verbose = FALSE,seed=2024)
+
+saveRDS(model_6, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_6_stm_20k_vuln_jobinsec_endmeet_unexpmix_ecoind_DiLiberatore.rds")
+```
+
+---
+
+## Part 3: Studying relevant words and documents, topics proportions, wordclouds, and topics' correlations (between base and complex models) 
+
+```{r Load models into the environment}
+model_1 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_1_stm_20k_no_covariates_DiLiberatore.rds")
+model_2 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_2_stm_20k_vuln_DiLiberatore.rds")
+model_3 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_3_stm_20k_vuln_jobinsec_DiLiberatore.rds")
+model_4 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_4_stm_20k_vuln_jobinsec_endmeet_DiLiberatore.rds")
+model_5 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_5_stm_20k_vuln_jobinsec_endmeet_unexpmix_DiLiberatore.rds")
+model_6 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_6_stm_20k_vuln_jobinsec_endmeet_unexpmix_ecoind_DiLiberatore.rds")
+model_7 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_7_stm_20_gender_DiLiberatore.rds")
+model_8 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_8_stm_20_age_DiLiberatore.rds")
+model_9 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_9_stm_20_migration_DiLiberatore.rds")
+```
+
+```{r Model_1 - Relevant words for each topic}
+# Base model
+labelTopics(model_1, n = 5, frexweight = 0.5)
+# compare with model_6
+labelTopics(model_6, n = 5, frexweight = 0.5)
+
+## Improve visualisation
+top5_model_1 <- plot.STM(model_1, type="labels", n=5, text.cex = 1) 
+top5_model_6 <- plot.STM(model_6, type="labels", n=5, text.cex = 1) 
+```
+
+```{r Documents associated with topics - with base model}
+## Save Di Liberatore filtered list of documents (size = 2459 docs)
+saveRDS(ans_lis_filter, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/ans_lis_filter.rds")
+# Load filtered documents (in character, not as numbered documents)
+ans_lis_filter <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/ans_lis_filter.rds")
+
+# open a loop
+K <- model_1$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Topic_Quotes_DiLiberatore.pdf", width = 8, height = 6)
+
+for (k in 1:K) {
+  # findThoughts returns a list $docs, where each element corresponds to one topic
+  # Here we extract the first (and only) element for the current topic k
+  thoughts <- findThoughts(model_1,
+                           texts = ans_lis_filter,
+                           n = 2,      # number of representative phrases per topic
+                           topics = k)$docs[[1]]
+  
+  # Plot the representative phrases for the current topic
+  plotQuote(thoughts,
+            main = paste("Topic", k),
+            width = 80,     # maximum line width for each phrase
+            text.cex = 0.8) # font size for the text
+}
+#close pdf
+dev.off()
+```
+
+```{r Documents associated with topics - model with covariates}
+# open a loop
+K <- model_6$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Topic_Quotes_Model_with_Covariates_DiLiberatore.pdf", width = 8, height = 6)
+
+for (k in 1:K) {
+  # findThoughts returns a list $docs, where each element corresponds to one topic
+  # Here we extract the first (and only) element for the current topic k
+  thoughts_6 <- findThoughts(model_6,
+                           texts = ans_lis_filter,
+                           n = 2,      # number of representative phrases per topic
+                           topics = k)$docs[[1]]
+  
+  # Plot the representative phrases for the current topic
+  plotQuote(thoughts_6,
+            main = paste("Topic", k),
+            width = 80,     # maximum line width for each phrase
+            text.cex = 0.8) # font size for the text
+}
+#close pdf
+dev.off()
+```
+
+```{r Documents associated with topics - model with gender}
+# open a loop
+K <- model_7$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Topic_Quotes_Model_with_gender_DiLiberatore.pdf", width = 8, height = 6)
+
+for (k in 1:K) {
+  # findThoughts returns a list $docs, where each element corresponds to one topic
+  # Here we extract the first (and only) element for the current topic k
+  thoughts_7 <- findThoughts(model_7,
+                           texts = ans_lis_filter,
+                           n = 2,      # number of representative phrases per topic
+                           topics = k)$docs[[1]]
+  
+  # Plot the representative phrases for the current topic
+  plotQuote(thoughts_7,
+            main = paste("Topic", k),
+            width = 80,     # maximum line width for each phrase
+            text.cex = 0.8) # font size for the text
+}
+#close pdf
+dev.off()
+```
+
+```{r Documents associated with topics - model with age}
+# open a loop
+K <- model_8$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Topic_Quotes_Model_with_age_DiLiberatore.pdf", width = 8, height = 6)
+
+for (k in 1:K) {
+  # findThoughts returns a list $docs, where each element corresponds to one topic
+  # Here we extract the first (and only) element for the current topic k
+  thoughts_8 <- findThoughts(model_8,
+                           texts = ans_lis_filter,
+                           n = 2,      # number of representative phrases per topic
+                           topics = k)$docs[[1]]
+  
+  # Plot the representative phrases for the current topic
+  plotQuote(thoughts_8,
+            main = paste("Topic", k),
+            width = 80,     # maximum line width for each phrase
+            text.cex = 0.8) # font size for the text
+}
+#close pdf
+dev.off()
+```
+
+```{r Documents associated with topics - model with migrant background}
+# open a loop
+K <- model_9$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Topic_Quotes_Model_with_migrant_DiLiberatore.pdf", width = 8, height = 6)
+
+for (k in 1:K) {
+  # findThoughts returns a list $docs, where each element corresponds to one topic
+  # Here we extract the first (and only) element for the current topic k
+  thoughts_9 <- findThoughts(model_9,
+                           texts = ans_lis_filter,
+                           n = 2,      # number of representative phrases per topic
+                           topics = k)$docs[[1]]
+  
+  # Plot the representative phrases for the current topic
+  plotQuote(thoughts_9,
+            main = paste("Topic", k),
+            width = 80,     # maximum line width for each phrase
+            text.cex = 0.8) # font size for the text
+}
+#close pdf
+dev.off()
+```
+
+```{r Expected topic proportions in the corpus}
+# save results in pdf (as above)
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Topic_Proportions_Within_Models_DiLiberatore.pdf", width = 8, height = 6)
+
+# model_1 is the base model without covariates
+plot(model_1, type = "summary", xlim = c(0, .3), main = "Model 1 - Base model")
+
+# model_2:6 are the nested work-related and economic-related models
+# which measure multidimensional states of precarity
+plot(model_2, type = "summary", xlim = c(0, .3), main = "Model 2")
+plot(model_3, type = "summary", xlim = c(0, .3), main = "Model 3")
+plot(model_4, type = "summary", xlim = c(0, .3), main = "Model 4")
+plot(model_5, type = "summary", xlim = c(0, .3), main = "Model 5")
+plot(model_6, type = "summary", xlim = c(0, .3), main = "Model 6 - Complete model")
+
+# model_7 checks variations in proportions for sociodemographic variables
+plot(model_7, type = "summary", xlim = c(0, .3), main = "Model 7 - Gender")
+plot(model_8, type = "summary", xlim = c(0, .3), main = "Model 8 - Age")
+plot(model_9, type = "summary", xlim = c(0, .3), main = "Model 9 - Migrant Background")
+
+#close pdf
+dev.off()
+```
+
+```{r Word cloud for each topic model base}
+# open a loop
+K <- model_1$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Wordcloud_base_DiLiberatore.pdf", width = 8, height = 6)
+
+#model_1 no covariates
+for (k in 1:K) {
+cloud(model_1, topic = k, scale = c(2,.25))
+  title(main = paste0("Model 1 - base model | Topic ", k))
+}
+
+# close pdf
+dev.off()
+```
+
+```{r Word cloud for each topic model with covariates}
+# open a loop
+K <- model_6$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Wordcloud_with_covariates_DiLiberatore.pdf", width = 8, height = 6)
+
+#model_1 no covariates
+for (k in 1:K) {
+cloud(model_6, topic = k, scale = c(2,.25))
+  title(main = paste0("Model 6 - Complete model | Topic ", k))
+}
+
+# close pdf
+dev.off()
+```
+
+```{r Word cloud for each topic model with gender}
+# open a loop
+K <- model_7$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Wordcloud_with_gender_DiLiberatore.pdf", width = 8, height = 6)
+
+#model_1 no covariates
+for (k in 1:K) {
+cloud(model_7, topic = k, scale = c(2,.25))
+  title(main = paste0("Model 7 - Gender model | Topic ", k))
+}
+
+# close pdf
+dev.off()
+```
+
+```{r Word cloud for each topic model age}
+# open a loop
+K <- model_8$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Wordcloud_with_age_DiLiberatore.pdf", width = 8, height = 6)
+
+#model_1 no covariates
+for (k in 1:K) {
+cloud(model_8, topic = k, scale = c(2,.25))
+  title(main = paste0("Model 7 - Age model | Topic ", k))
+}
+
+# close pdf
+dev.off()
+```
+
+```{r Word cloud for each topic model migration background}
+# open a loop
+K <- model_9$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Wordcloud_with_migration_DiLiberatore.pdf", width = 8, height = 6)
+
+#model_1 no covariates
+for (k in 1:K) {
+cloud(model_9, topic = k, scale = c(2,.25))
+  title(main = paste0("Model 9 - Migration model | Topic ", k))
+}
+
+# close pdf
+dev.off()
+```
+
+```{r Correlation between Topics}
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Correlation_Between_Topics_DiLiberatore.pdf", width = 8, height = 6)
+
+## model_1 no covariates
+## topics are very related between each other
+mod_1_corr <- topicCorr(model_1)
+plot.topicCorr(mod_1_corr) 
+title(
+  main = "Model 1 – Topic correlation network")
+
+## model_2:6 are the nested precarity-related models
+mod_2_corr <- topicCorr(model_2)
+plot.topicCorr(mod_2_corr)
+title(
+  main = "Model 2 – Topic correlation network")
+  
+mod_3_corr <- topicCorr(model_3)
+plot.topicCorr(mod_3_corr)
+title(
+  main = "Model 3 – Topic correlation network")
+  
+mod_4_corr <- topicCorr(model_4)
+plot.topicCorr(mod_4_corr)
+title(
+  main = "Model 4 – Topic correlation network")
+  
+mod_5_corr <- topicCorr(model_5)
+plot.topicCorr(mod_5_corr)
+title(
+  main = "Model 5 – Topic correlation network")
+  
+mod_6_corr <- topicCorr(model_6)
+plot.topicCorr(mod_6_corr)
+title(
+  main = "Model 6 – Topic correlation network")
+  
+#model_7:9, socio-demographic variables 
+mod_7_corr <- topicCorr(model_7)
+plot.topicCorr(mod_7_corr)
+title(
+  main = "Model 7 – Topic correlation network")
+  
+mod_8_corr <- topicCorr(model_8)
+plot.topicCorr(mod_8_corr)
+title(
+  main = "Model 8 – Topic correlation network")
+  
+mod_9_corr <- topicCorr(model_9)
+plot.topicCorr(mod_9_corr)
+title(
+  main = "Model 9 – Topic correlation network")
+
+# close pdf
+dev.off()
+```
+
+## Part 4: Studying estimated effect of included covariates
+
+```{r Estimate effect of nested prevalenced-based covariate model}
+K <- model_1$settings$dim$K 
+for (k in 1:K) {
+effects_2 <- estimateEffect(1:K ~ dum_normepres,  
+                          stmobj = model_2,
+                          metadata = meta, 
+                          uncertainty = "Global")
+
+effects_3 <- estimateEffect(1:K ~ dum_normepres + dum_jobinsec,  
+                          stmobj = model_3,
+                          metadata = meta, 
+                          uncertainty = "Global")
+
+effects_4 <- estimateEffect(1:K ~ dum_normepres + dum_jobinsec + dum_endmeet,  
+                          stmobj = model_4,
+                          metadata = meta, 
+                          uncertainty = "Global")
+
+effects_5 <- estimateEffect(1:K ~ dum_normepres + dum_jobinsec + dum_endmeet + dum_unexpmix,  
+                          stmobj = model_5,
+                          metadata = meta, 
+                          uncertainty = "Global")
+
+effects_6 <- estimateEffect(1:K ~ dum_normepres + dum_jobinsec + dum_endmeet + dum_unexpmix + dum_ecoind,  
+                          stmobj = model_6,
+                          metadata = meta, 
+                          uncertainty = "Global")
+
+effects_7 <- estimateEffect(1:K ~ dum_gender,  
+                          stmobj = model_7,
+                          metadata = meta, 
+                          uncertainty = "Global")
+
+effects_8 <- estimateEffect(1:K ~ age_dum,  
+                          stmobj = model_8,
+                          metadata = meta, 
+                          uncertainty = "Global")
+
+effects_9 <- estimateEffect(1:K ~ migr_dum,  
+                          stmobj = model_9,
+                          metadata = meta, 
+                          uncertainty = "Global")
+}
+
+saveRDS(effects_2, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_2_effects_DiLiberatore.rds")
+saveRDS(effects_3, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_3_effects_DiLiberatore.rds")
+saveRDS(effects_4, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_4_effects_DiLiberatore.rds")
+saveRDS(effects_5, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_5_effects_DiLiberatore.rds")
+saveRDS(effects_6, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_6_effects_DiLiberatore.rds")
+saveRDS(effects_7, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_7_effects_DiLiberatore.rds")
+saveRDS(effects_8, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_8_effects_DiLiberatore.rds")
+saveRDS(effects_9, file = "C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_9_effects_DiLiberatore.rds")
+```
+
+```{r Load estimate effects covariates}
+## Load estimates for each level of the nest model
+
+effects_2 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_2_effects_DiLiberatore.rds")
+effects_3 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_3_effects_DiLiberatore.rds")
+effects_4 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_4_effects_DiLiberatore.rds")
+effects_5 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_5_effects_DiLiberatore.rds")
+effects_6 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_6_effects_DiLiberatore.rds")
+effects_7 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_7_effects_DiLiberatore.rds")
+effects_8 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_8_effects_DiLiberatore.rds")
+effects_9 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_9_effects_DiLiberatore.rds")
+```
+
+```{r Summary estimated effect of each covariate}
+cat("EFFECTS 2\n")
+summary_effect_2 <- capture.output((summary(effects_2, topic = 1:20)), sep = "\n") |> print()
+
+cat("EFFECTS 3\n")
+summary_effect_3 <- capture.output((summary(effects_3, topic = 1:20)), sep = "\n") |> print()
+
+cat("EFFECTS 4\n")
+summary_effect_4 <- capture.output((summary(effects_4, topic = 1:20)), sep = "\n") |> print()
+
+cat("EFFECTS 5\n")
+summary_effect_5 <- capture.output((summary(effects_5, topic = 1:20)), sep = "\n") |> print()
+
+cat("EFFECTS 6\n")
+summary_effect_6 <- capture.output((summary(effects_6, topic = 1:20)), sep = "\n") |> print()
+
+cat("EFFECTS 7\n")
+summary_effect_7 <- capture.output((summary(effects_7, topic = 1:20)), sep = "\n") |> print()
+
+cat("EFFECTS 8\n")
+summary_effect_8 <- capture.output((summary(effects_8, topic = 1:20)), sep = "\n") |> print()
+
+cat("EFFECTS 9\n")
+summary_effect_9 <- capture.output((summary(effects_9, topic = 1:20)), sep = "\n") |> print()
+```
+
+```{r Plot covariates effects over topics' proportions (difference)}
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_STM/Results/DiLiberatoreResults/STM_Estimateffect6_each_covariate_difference.pdf", width = 8, height = 6)
+
+plot(effects_6,
+     covariate = "dum_normepres",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",   # target 
+     cov.value2 = "0",   # Reference group
+     main = "Effect of Employment Vulnerability on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom", # remove "Compared to 0" for visual clarity
+     custom.labels = paste("Topic", 1:20),
+     width      = 15)
+
+plot(effects_6,
+     covariate = "dum_jobinsec",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",   # target 
+     cov.value2 = "0",   # Reference group
+     main = "Effect of Job Insecurity on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom", # remove "Compared to 0" for visual clarity
+     custom.labels = paste("Topic", 1:20),
+     width      = 15)
+
+plot(effects_6,
+     covariate = "dum_endmeet",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",   # target 
+     cov.value2 = "0",   # Reference group
+     main = "Effect of Inability to Make Ends Meet on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom", # remove "Compared to 0" for visual clarity
+     custom.labels = paste("Topic", 1:20),
+     width      = 15)
+
+plot(effects_6,
+     covariate = "dum_unexpmix",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",   # target 
+     cov.value2 = "0",   # Reference group
+     main = "Effect of Inability to Pay for Unexpected Expenses on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom", # remove "Compared to 0" for visual clarity
+     custom.labels = paste("Topic", 1:20),
+     width      = 15)
+
+plot(effects_6,
+     covariate = "dum_ecoind",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",   # target 
+     cov.value2 = "0",   # Reference group
+     main = paste("Effect of Self-Perception of Economic Indipendence on Topics"),
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom", # remove "Compared to 0" for visual clarity
+     custom.labels = paste("Topic", 1:20),
+     width      = 15)
+# close pdf
+dev.off()
+```
+
+```{r Plot covariates effects over topics' proportions (difference)}
+plot(effects_7,
+     covariate = "dum_gender",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",   # target 
+     cov.value2 = "0",   # Reference group
+     main = paste("Effect of Gender_dum on Topics"),
+     xlab = "Gender dummy (dum_gender)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),  # niente "Compared to 0"
+     width      = 15)
+```
+
+## Part 5: Saving Resulting dataset (with complex precarity-related model)
+
+```{r Saving dataset}
+## Load latest model (model_6)
+model_6 <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Models/DiLiberatore/model_6_stm_20k_vuln_jobinsec_endmeet_unexpmix_ecoind_DiLiberatore.rds")
+
+## theta extraction
+nested_topic_matrix<-model_6$theta
+nested_topic_matrix<-as.data.frame(nested_topic_matrix)
+colnames(nested_topic_matrix) <- paste0("Topic", 1:20)
+
+## creation of the final dataset 
+## (id document + topic proportions, with prevalence based covariates)
+nested_df_topics <- cbind(meta, nested_topic_matrix)
+head(nested_df_topics)
+
+# save dataframe in processed_data
+saveRDS(nested_df_topics, file = "C:/Users/vicio/Desktop/Rev_STM/Processed_data/DiLiberatorePro/nested_dataframe_topics_proportions_DiLiberatore.rds")
+```
+
+```{r Assign documents 0-1 membership for each topic}
+# Load and create a copy of the original dataset
+nested_df_topics <- readRDS("C:/Users/vicio/Desktop/Rev_STM/Processed_data/DiLiberatorePro/nested_dataframe_topics_proportions_DiLiberatore.rds")
+nested_binary <- nested_df_topics
+
+# get column indices for Topic1–Topic20
+nested_start_col <- which(names(nested_binary) == "Topic1")
+nested_end_col   <- which(names(nested_binary) == "Topic20")
+
+# Subset columns
+nested_subset_columns <- nested_binary[, nested_start_col:nested_end_col]
+
+# 3) convert topic proportions into 0/1 on the copied dataset
+for (col_name in names(nested_subset_columns)) {
+nested_binary[,col_name]<-ifelse(nested_binary[,col_name]<0.1,0,1)
+}
+head(nested_binary)
+
+saveRDS(nested_binary, file = "C:/Users/vicio/Desktop/Rev_STM/Processed_data/DiLiberatorePro/binary_nested_dataframe_topics_proportions_DiLiberatore.rds")
+```
+
+```{r Logistical regression - precarity as a function of recognised topics}
+model_topic_logit <- glm(dum_prec ~ Topic1 + Topic2 + Topic3 + Topic4 + Topic5 + Topic6 + Topic7 + Topic8 + Topic9 + Topic10 + Topic11 + Topic12 + Topic13 + Topic14 + Topic15 + Topic16 + Topic17 + Topic18 + Topic19 + Topic20, data = nested_binary, family = binomial)
+summary(model_topic_logit)
+```
+
+## Appendix
+
+
+```{r covariates in prevalence - precarity drivers dummy}
+load("/Users/macpro/Desktop/Tesi/file_r/Rev_STM 2/Processed_data/environment_diLiberatore")
+
+meta |> 
+  count(normepres) 
+  
+meta <- meta |>
+  mutate(
+    dum_normepres = if_else(normepres > 0.8, 1, 0)) 
+
+meta |> 
+  count(dum_normepres)
+
+meta |> 
+  count(jobinsec)
+
+meta <- meta |> 
+  mutate(dum_jobinsec = if_else(jobinsec %in% c(1, 2), 1, 0))
+
+meta |> 
+  count(dum_jobinsec)
+
+meta |> 
+  count(endmeet)
+
+meta <- meta |> 
+  mutate(dum_endmeet = if_else(endmeet %in% c(1, 2), 1, 0))
+
+meta |> 
+  count(dum_endmeet)
+
+meta |> 
+  count(unexpmix)
+
+meta <- meta |> 
+  mutate(dum_unexpmix = if_else(unexpmix %in% c(1), 1, 0))
+
+meta |> 
+  count(dum_unexpmix)
+
+meta |> 
+  count(ecoind)
+
+meta <- meta |> 
+  mutate(dum_ecoind = if_else(ecoind %in% c(1), 1, 0))
+
+meta |> 
+  count(dum_ecoind)
+
+meta <- meta |>
+  mutate(
+    dum_normepres = factor(dum_normepres, levels = c(0,1)),
+    dum_jobinsec  = factor(dum_jobinsec,  levels = c(0,1)),
+    dum_endmeet   = factor(dum_endmeet,   levels = c(0,1)),
+    dum_unexpmix  = factor(dum_unexpmix,  levels = c(0,1)),
+    dum_ecoind    = factor(dum_ecoind,    levels = c(0,1))
+  )
+
+```
+
+```{r Documents associated with topics - model with age}
+model_0 <- readRDS("C:/Users/ftomasi/Downloads/folder/Rev_STM 2/Models/DiLiberatore/model_1_stm_20k_no_covariates_DiLiberatore.rds")
+model_tomasi <- readRDS("C:/Users/ftomasi/Downloads/folder/Rev_STM 2/Models/DiLiberatore/model_5_stm_20k_vuln_jobinsec_endmeet_unexpmix_DiLiberatore.rds")
+
+```
+
+
+
+```{r Analysis 1: Semantic Stability Check (Side-by-Side Table)}
+
+library(stm)
+library(tidyverse)
+library(writexl)
+
+# --- 1. Extract Top Words from Model 0 (Base) ---
+labels_0 <- labelTopics(model_0, n = 5)
+# FIX: Do NOT use t() here. The matrix is already 20 rows x 5 columns.
+topics_0 <- data.frame(labels_0$prob) 
+colnames(topics_0) <- paste0("Base_Word_", 1:5)
+topics_0$Topic <- 1:20  # Now this will match (20 rows)
+
+# --- 2. Extract Top Words from Model Tomasi (Covariates) ---
+labels_t <- labelTopics(model_tomasi, n = 5)
+# FIX: Do NOT use t() here either.
+topics_t <- data.frame(labels_t$prob)
+colnames(topics_t) <- paste0("Tomasi_Word_", 1:5)
+topics_t$Topic <- 1:20
+
+# --- 3. Merge and Compare ---
+comparison_table <- left_join(topics_0, topics_t, by = "Topic") |>
+  select(Topic, Base_Word_1, Tomasi_Word_1, Base_Word_2, Tomasi_Word_2, Base_Word_3, Tomasi_Word_3)
+
+# --- 4. View and Save ---
+print(comparison_table)
+write_xlsx(comparison_table, "Emo_Results/Model_Comparison_TopWords.xlsx")
+```
+
+```{r Analysis 2: Semantic Coherence vs. Exclusivity (The Pareto Plot)}
+
+# --- CALCULATE METRICS ---
+# Ensure you have the 'docs' object loaded from your pre-processing environment!
+# If your object is named 'emo_docs' or 'out$documents', replace 'docs' below.
+
+# 1. Base Model Metrics
+sem_0 <- semanticCoherence(model_0, documents = docs, M = 10)
+exc_0 <- exclusivity(model_0)
+
+# 2. Your Model Metrics
+sem_t <- semanticCoherence(model_tomasi, documents = docs, M = 10)
+exc_t <- exclusivity(model_tomasi)
+
+# --- PLOTTING ---
+png("Emo_Results/Coherence_Exclusivity_Comparison.png", width = 8, height = 6, units = "in", res = 300)
+
+# Create empty plot frame
+plot(sem_0, exc_0, 
+     xlim = c(min(sem_0, sem_t) - 5, max(sem_0, sem_t) + 5), 
+     ylim = c(min(exc_0, exc_t) - 0.5, max(exc_0, exc_t) + 0.5),
+     xlab = "Semantic Coherence (Higher is Better)", 
+     ylab = "Exclusivity (Higher is Better)",
+     main = "Model Diagnostics: Base vs. Covariate Model",
+     type = "n") # 'n' means don't plot points yet
+
+# Add Base Model (Blue)
+text(sem_0, exc_0, labels = 1:20, col = "blue", cex = 0.8)
+points(mean(sem_0), mean(exc_0), col = "blue", pch = 19, cex = 1.5) # Centroid
+
+# Add Tomasi Model (Red)
+text(sem_t, exc_t, labels = 1:20, col = "red", cex = 0.8)
+points(mean(sem_t), mean(exc_t), col = "red", pch = 19, cex = 1.5) # Centroid
+
+# Add Legend and Arrows
+legend("bottomleft", legend = c("Base Model (Di Liberatore)", "Covariate Model (Tomasi)"),
+       col = c("blue", "red"), pch = 1, lty = 1)
+
+dev.off()
+
+```
+
+```{r Analysis 3: Explanatory Power (Held-Out Likelihood)}
+
+# 1. Create a Held-Out Set (10% of data hidden)
+# 'out$documents' and 'out$vocab' come from your textProcessor output
+heldout <- make.heldout(out$documents, out$vocab, N = floor(0.1 * length(out$documents)))
+
+# 2. Run Base Model on Training Set (No Covariates)
+# Note: We use lower iterations just for the test comparison
+model_base_held <- stm(documents = heldout$documents, vocab = heldout$vocab, 
+                       K = 20, prevalence = NULL, # NO COVARIATES
+                       data = meta, max.em.its = 50, verbose = FALSE, seed = 2024)
+
+# 3. Run Your Model on Training Set (With Covariates)
+model_tomasi_held <- stm(documents = heldout$documents, vocab = heldout$vocab, 
+                         K = 20, 
+                         # INSERT YOUR EXACT FORMULA HERE:
+                         prevalence = ~ dum_normepres + dum_jobinsec + dum_endmeet + dum_unexpmix, 
+                         data = meta, max.em.its = 50, verbose = FALSE, seed = 2024)
+
+# 4. Calculate Likelihood on the Hidden (Held-out) Data
+eval_base   <- eval.heldout(model_base_held, heldout$missing)
+eval_tomasi <- eval.heldout(model_tomasi_held, heldout$missing)
+
+# 5. Print Results
+cat("Held-Out Likelihood (Higher is Better):\n")
+cat("Base Model:", eval_base$expected.heldout, "\n")
+cat("Your Model:", eval_tomasi$expected.heldout, "\n")
+
+# If eval_tomasi$expected.heldout is HIGHER (less negative) than Base,
+# you have statistically proven your model is superior.
+
+```
+
+
+
+```{r Check neutrality paradox}
+parte 3 di Rev_Emotion_0125.Rmd
+{r Being emotional is a fuction sociodemographic factor and drivers of precarity}
+```
+
+
+rewrite without changing nothing in the chat
+
+```{cosine similarity and tf_idf}
+library(stm)
+library(quanteda)
+library(quanteda.textstats)
+library(Matrix)
+df <- read_xlsx("~/Desktop/Tesi/file_r/data/df_complete_3.xlsx")
+processed <- textProcessor(
+  documents = df$text, 
+  metadata = df,
+  language = "english",
+  stem = TRUE,
+  removestopwords = TRUE,
+  customstopwords = words,
+  custompunctuation = c("-"),
+  verbose = FALSE
+)
+
+out <- prepDocuments(
+  documents = processed$documents, 
+  vocab = processed$vocab, 
+  meta = processed$meta
+)
+
+row_indices <- rep(1:length(out$documents), sapply(out$documents, ncol))
+col_indices <- unlist(lapply(out$documents, function(x) x[1, ]))
+counts <- unlist(lapply(out$documents, function(x) x[2, ]))
+
+sparse_mat <- sparseMatrix(
+  i = row_indices,
+  j = col_indices,
+  x = counts,
+  dims = c(length(out$documents), length(out$vocab))
+)
+
+filtered_dtm <- as.dfm(sparse_mat)
+colnames(filtered_dtm) <- out$vocab
+docvars(filtered_dtm) <- out$meta
+
+filtered_tfidf <- dfm_tfidf(filtered_dtm)
+
+sim_matrix <- textstat_simil(filtered_dtm, method = "cosine")
+sim_matrix_raw <- as.matrix(sim_matrix)
+diag(sim_matrix_raw) <- NA
+mean_cosine <- mean(sim_matrix_raw, na.rm = TRUE)
+
+print(mean_cosine)
+```
+

@@ -1,0 +1,2466 @@
+---
+title: "Rev_Emotions"
+author: "Vincenzo Favara"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Part 0: Settings and preparatory data management on open dataset
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r working directory}
+rm(list=ls())
+graphics.off()
+setwd("~/Desktop/file_r/")
+```
+
+```{r Installed packages, include = FALSE}
+install.packages(c("stm", "dplyr", "ggplot2", "tidytext", "tidyr", "tidyverse", "data.table", "haven", "readxl", "quanteda", "text2map", "quanteda.textplots", "quanteda.textstats", "text2vec", "fpc", "factoextra", "textmineR"))
+```
+
+```{r Load packages, include=FALSE}
+library(stm)
+library(dplyr)
+library(ggplot2)
+library(tidytext)
+library(tidyr)
+library(tidyverse)
+library(data.table)
+library(haven)
+library(readxl)
+library(quanteda) 
+library(quanteda.textplots) 
+library(quanteda.textstats) 
+library(text2map)
+library(text2vec)
+library(fpc) 
+library(factoextra) 
+library(textmineR) 
+```
+
+```{r open data files, include=FALSE}
+## [1] metadata dataset 
+data <- read_xlsx("~/Desktop/file_r/data/df_complete_3.xlsx") ## Last Version from Tomasi, without merged words (Note: negative emotions such as "disappointment" and "sadness" should be higher than "neutral")
+head(data) # dataset is already skimmed, only rows from final text dataset
+```
+
+```{r Preparatory recodes from VulnYouth's data management - Socio-demographic characteristics}
+## Gender; it does not need any recode 
+data  |> 
+  count(gender)
+
+## Age class (below vs above 30)
+data |> 
+  count(ageyear)
+
+data <- data |> 
+  mutate(age_dum = ifelse(ageyear >= 30, 1, 0))
+
+data |> 
+  count(age_dum)
+
+## migrant background
+data |> 
+  count(migrant)
+
+data <- data |> 
+  mutate(migr_dum = ifelse(migrant == 3, 1, 0))
+
+data |> 
+  count(migr_dum)
+```
+
+```{r Preparatory recodes from VulnYouth's data management - Precarity-related indicators}
+## Scale of subjectively perceived precarity - dummy
+data |> 
+  count(prec)
+
+data <- data |> 
+  mutate(dum_prec = ifelse(prec >= 8, 1, 0)
+         )
+data |> 
+  count(dum_prec)
+
+## Scale of subjectively perceived precarity - normalised index
+data <- data |>
+  mutate(
+    normprec = (prec - min(prec, na.rm = TRUE)) /
+                (max(prec, na.rm = TRUE) - min(prec, na.rm = TRUE))
+  )
+
+data |> 
+  count(normprec)
+
+## Employment VUlnerability - From Epres' Scale (higher vs lower risk) like in precarity' scale sintax
+data |> 
+  count(normepres) 
+  
+data <- data |>
+  mutate(
+    dum_normepres = if_else(normepres > 0.8, 1, 0))
+
+data |> 
+  count(dum_normepres)
+
+## Job Insecurity (higher gravity vs all)
+data |> 
+  count(jobinsec)
+
+data <- data |> 
+  mutate(dum_jobinsec = if_else(jobinsec %in% c(1, 2), 1, 0))
+
+data |> 
+  count(dum_jobinsec)
+
+## Making ends meet (higher difficulty vs all) 
+data |> 
+  count(endmeet)
+
+data <- data |> 
+  mutate(dum_endmeet = if_else(endmeet %in% c(1, 2), 1, 0))
+
+data |> 
+  count(dum_endmeet)
+
+## Capacity to pay unexpected expenses ("alone" vs all)
+data |> 
+  count(unexpmix)
+
+data <- data |> 
+  mutate(dum_unexpmix = if_else(unexpmix %in% c(1), 1, 0))
+
+data |> 
+  count(dum_unexpmix)
+
+## Economic indipendence, it does not need any dummy recode
+data |> 
+  count(ecoind)
+```
+
+------------------------------------------------------------------------
+
+# Quantitative Analysis
+
+## Part 1: VAD Scores
+
+```{r VAD scores: Valence}
+## Valence - continous variable
+data |>
+  count(V_predicted) |>
+  mutate(
+    perc = 100 * (n / sum(n))           
+  )
+
+## Valence continuos - density plot and boxplot
+summary(data$V_predicted)
+
+data |> 
+  ggplot(aes(x = V_predicted)) +
+  geom_density() +
+  geom_vline(aes(xintercept = 3)) +
+  labs(
+    x = "Predicted Valence Scores",
+    title = "Predicted Valence - Density Plot"
+  )
+ggsave("Emo_Results/Valence_densityplot.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Valence - dummy variable
+data <- data |>
+  mutate(
+    V_dum = if_else(V_predicted > 3, 1, 0)
+  )
+
+data |> 
+  count(V_dum) |> 
+  mutate(
+    perc = 100 * (n/sum(n))
+  )
+
+## Valence_dum - bar plot
+data |>
+  ggplot(aes(x = V_dum)) +
+  geom_bar(aes(fill = factor(V_dum))) +
+  scale_fill_manual(
+    values = c("0" = "#1b9e77", "1" = "#d95f02"),
+    labels = c("Negative", "Positive"),
+    name   = NULL
+  ) +
+  labs(
+    title = "Predicted Valence_dummy - bar plot",
+    x = "Predicted Valence (dummy recode)"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Valencedum_barplot.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r VAD scores: Arousal}
+## Arousal - continous variable
+data |>
+  count(A_predicted) |>
+  mutate(
+    perc = 100 * (n / sum(n))           
+  )
+
+## Arousal continous - density and boxplot
+summary(data$A_predicted)
+
+data |> 
+  ggplot(aes(x = A_predicted)) +
+  geom_density() +
+  geom_vline(aes(xintercept = 3)) +
+  labs(
+    x = "Predicted Arousal Scores",
+    title = "Predicted Arousal - Density Plot"
+  )
+ggsave("Emo_Results/Arousal_densityplot.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Arousal - dummy variable
+data <- data |>
+  mutate(
+    A_dum = if_else(A_predicted > 3, 1, 0)
+  )
+
+data |> 
+  count(A_dum) |> 
+  mutate(
+    perc = 100 * (n/sum(n))
+  )
+
+
+data |> 
+  count(A_dum)
+
+## Arousal_dum - bar plot
+data |>
+  ggplot(aes(x = A_dum)) +
+  geom_bar(aes(fill = factor(A_dum))) +
+  scale_fill_manual(
+    values = c("0" = "#1b9e77", "1" = "#d95f02"),
+    labels = c("Low", "High"),
+    name   = NULL
+  ) +
+  labs(
+    title = "Predicted Arousal_dummy - bar plot",
+    x = "Predicted Arousal (dummy recode)"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Arousaldum_barplot.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r VAD scores: Dominance}
+## Dominance - continous variable
+data |>
+  count(D_predicted) |>
+  mutate(
+    perc = 100 * (n / sum(n))           
+  )
+
+## Dominance continous - density and boxplot
+summary(data$D_predicted)
+
+data |> 
+  ggplot(aes(x = D_predicted)) +
+  geom_density() +
+  geom_vline(aes(xintercept = 3)) + 
+  labs(
+    x = "Predicted Dominance Scores",
+    title = "Predicted Dominance - Density Plot"
+  ) 
+ggsave("Emo_Results/Dominance_densityplot.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Dominance - dummy variable
+data <- data |>
+  mutate(
+    D_dum = if_else(D_predicted > 3, 1, 0)
+  )
+
+data |> 
+  count(D_dum) |> 
+  mutate(
+    perc = 100 * (n/sum(n))
+  )
+
+data |> 
+  count(D_dum)
+
+## Arousal_dum - bar plot
+data |>
+  ggplot(aes(x = D_dum)) +
+  geom_bar(aes(fill = factor(D_dum))) +
+  scale_fill_manual(
+    values = c("0" = "#1b9e77", "1" = "#d95f02"),
+    labels = c("Low", "High"),
+    name   = NULL
+  ) +
+  labs(
+    title = "Predicted Dominance_dummy - bar plot",
+    x = "Predicted Dominance (dummy recode)"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Dominancedum_barplot.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 1.1 Descriptives VAD Scores: Valence, Arousal, Dominance [ Look at Tomasi analyses - file python ]
+
+```{r VAD scores across socio-demographic characteristics and perceived precarity levels}
+vad_by_socio_group <- data |>
+  group_by(gender, age_dum, migr_dum, dum_prec) |>
+  mutate(
+    age_dum   = factor(age_dum,   levels = c(0,1), labels = c("< 30", ">= 30")),
+    migr_dum  = factor(migr_dum,  levels = c(0,1), labels = c("No migr.", "Migr.")),
+    dum_prec  = factor(dum_prec,  levels = c(0,1), labels = c("Low prec.", "High prec.")),
+    gender    = factor(gender,   levels = c(0,1), labels = c("Men", "Women"))
+  ) |> 
+  summarise(
+    n        = n(),
+    val_mean = mean(V_predicted, na.rm = TRUE),
+    val_sd   = sd(V_predicted, na.rm = TRUE),
+    aro_mean = mean(A_predicted, na.rm = TRUE),
+    aro_sd   = sd(A_predicted, na.rm = TRUE),
+    dom_mean = mean(D_predicted, na.rm = TRUE),
+    dom_sd   = sd(D_predicted, na.rm = TRUE),
+    .groups  = "drop"
+  )
+tibble(vad_by_socio_group)
+```
+
+```{r chi-results VAD dimensions and listed variables}
+library(broom)
+socio_cat_vars <- c("gender", "age_dum", "migr_dum", "dum_prec")
+
+## Valence
+V_socio_chi_results <- map_dfr(
+  socio_cat_vars,
+  ~ chisq.test(data[[.x]], data$V_dum) |>
+    tidy() |>
+    mutate(var = .x),
+  .id = NULL
+)
+tibble(V_socio_chi_results) # Only gender has passed the p-value test
+
+## Arousal
+A_socio_chi_results <- map_dfr(
+  socio_cat_vars,
+  ~ chisq.test(data[[.x]], data$A_dum) |>
+    tidy() |>
+    mutate(var = .x),
+  .id = NULL
+)
+tibble(A_socio_chi_results) # Only gender has passed the p-value test
+
+## Dominance
+D_socio_chi_results <- map_dfr(
+  socio_cat_vars,
+  ~ chisq.test(data[[.x]], data$D_dum) |>
+    tidy() |>
+    mutate(var = .x),
+  .id = NULL
+)
+tibble(D_socio_chi_results) # Only gender has passed the p-value test
+```
+
+```{r control of attended frequencies - Valence}
+## Gender x V
+tab_gender_V <- table(data$gender, data$V_dum)
+chi_gender_V <- chisq.test(tab_gender_V, correct = FALSE) |> print() # only gender has passed the significance test with X-squared = 4.0144, p-value = 0.04511
+## Expected and observed
+chi_gender_V$expected   
+chi_gender_V$observed 
+
+## age_dum x V
+tab_age_V <- table(data$age_dum, data$V_dum)
+chi_age_V <- chisq.test(tab_age_V, correct = FALSE) |> print()
+chi_age_V$expected
+chi_age_V$observed
+
+## migr_dum × V
+tab_migr_V <- table(data$migr_dum, data$V_dum)
+chi_migr_V <- chisq.test(tab_migr_V, correct = FALSE) |> print()
+chi_migr_V$expected
+chi_migr_V$observed
+
+## dum_prec × V
+tab_prec_V <- table(data$dum_prec, data$V_dum)
+chi_prec_V <- chisq.test(tab_prec_V, correct = FALSE) |> print()
+chi_prec_V$expected
+chi_prec_V$observed
+
+## Each pair has passed the attended frequencies test (at least >= 5 observation for each cell) meaning that chisq is correct to perform the test chisq to measure association between variables (i.e. Valence and x sociodemographic characteristics)
+```
+
+```{r control of attended frequencies - Arousal}
+## gender × A
+tab_gender_A <- table(data$gender, data$A_dum)
+chi_gender_A <- chisq.test(tab_gender_A, correct = FALSE) |> print() # p-value = 0.05935 X-squared = 3.5555, as above
+chi_gender_A$expected
+chi_gender_A$observed
+
+## age_dum × A
+tab_age_A <- table(data$age_dum, data$A_dum)
+chi_age_A <- chisq.test(tab_age_A, correct = FALSE) |> print()
+chi_age_A$expected
+chi_age_A$observed
+
+## migr_dum × A
+tab_migr_A <- table(data$migr_dum, data$A_dum)
+chi_migr_A <- chisq.test(tab_migr_A, correct = FALSE) |> print()
+chi_migr_A$expected
+chi_migr_A$observed
+
+## dum_prec × A
+tab_prec_A <- table(data$dum_prec, data$A_dum)
+chi_prec_A <- chisq.test(tab_prec_A, correct = FALSE) |> print() # p-value = 0.07231 almost accetable(?)
+chi_prec_A$expected
+chi_prec_A$observed
+
+## As above, test of attendend frequencies passed
+```
+
+```{r control of attended frequencies - Dominance}
+## gender × D
+tab_gender_D <- table(data$gender, data$D_dum)
+chi_gender_D <- chisq.test(tab_gender_D, correct = FALSE) |> print() # X-squared = 6.5191, df = 1, p-value = 0.01067 highly significative 
+chi_gender_D$expected
+chi_gender_D$observed
+
+## age_dum × D
+tab_age_D <- table(data$age_dum, data$D_dum)
+chi_age_D <- chisq.test(tab_age_D, correct = FALSE) |> print()
+chi_age_D$expected
+chi_age_D$observed
+
+## migr_dum × D
+tab_migr_D <- table(data$migr_dum, data$D_dum)
+chi_migr_D <- chisq.test(tab_migr_D, correct = FALSE) |> print()
+chi_migr_D$expected
+chi_migr_D$observed
+
+## dum_prec × D
+tab_prec_D <- table(data$dum_prec, data$D_dum)
+chi_prec_D <- chisq.test(tab_prec_D, correct = FALSE) |> print()
+chi_prec_D$expected
+chi_prec_D$observed
+
+## As above, test of attendend frequencies passed
+```
+
+### 1.2 Descriptives and association levels VAD Scores per socio-demographic characteristics and perceived precarity levels
+
+```{r Valence across socio-demographic and precarity groups}
+data |>
+  mutate(
+    age_dum   = factor(age_dum,   levels = c(0,1), labels = c("< 30", ">= 30")),
+    migr_dum  = factor(migr_dum,  levels = c(0,1), labels = c("No migr.", "Migr.")),
+    dum_prec  = factor(dum_prec,  levels = c(0,1), labels = c("Low prec.", "High prec.")),
+    gender    = factor(gender,   levels = c(0,1), labels = c("Men", "Women"))
+  ) |>
+  ggplot(aes(x = dum_prec, y = V_predicted, fill = gender)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4, position = position_dodge(width = 0.75)) +
+  stat_summary(
+    fun = "mean",
+    geom = "point",
+    position = position_dodge(width = 0.75),
+    shape = 21, size = 2, color = "black"
+  ) +
+  facet_grid(migr_dum ~ age_dum) +
+  labs(
+    x = "Subjective precarity",
+    y = "Valence score",
+    fill = "Gender",
+    title = "Valence across socio-demographic and precarity groups"
+  ) +
+  theme_classic(base_size = 10)
+ggsave("Emo_Results/Valence across socio-demographic and precarity groups.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Arousal across socio-demographic and precarity groups}
+data |>
+  mutate(
+    age_dum   = factor(age_dum,   levels = c(0,1), labels = c("< 30", ">= 30")),
+    migr_dum  = factor(migr_dum,  levels = c(0,1), labels = c("No migr.", "Migr.")),
+    dum_prec  = factor(dum_prec,  levels = c(0,1), labels = c("Low prec.", "High prec.")),
+    gender    = factor(gender,   levels = c(0,1), labels = c("Men", "Women"))
+  ) |>
+  ggplot(aes(x = dum_prec, y = A_predicted, fill = gender)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4, position = position_dodge(width = 0.75)) +
+  stat_summary(
+    fun = "mean",
+    geom = "point",
+    position = position_dodge(width = 0.75),
+    shape = 21, size = 2, color = "black"
+  ) +
+  facet_grid(migr_dum ~ age_dum) +
+  labs(
+    x = "Subjective precarity",
+    y = "Arousal score",
+    fill = "Gender",
+    title = "Arousal across socio-demographic and precarity groups"
+  ) +
+  theme_classic(base_size = 10)
+ggsave("Emo_Results/Arousal across socio-demographic and precarity groups.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Dominance across socio-demographic and precarity groups}
+data |>
+  mutate(
+    age_dum   = factor(age_dum,   levels = c(0,1), labels = c("< 30", ">= 30")),
+    migr_dum  = factor(migr_dum,  levels = c(0,1), labels = c("No migr.", "Migr.")),
+    dum_prec  = factor(dum_prec,  levels = c(0,1), labels = c("Low prec.", "High prec.")),
+    gender    = factor(gender,   levels = c(0,1), labels = c("Men", "Women"))
+  ) |>
+  ggplot(aes(x = dum_prec, y = D_predicted, fill = gender)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4, position = position_dodge(width = 0.75)) +
+  stat_summary(
+    fun = "mean",
+    geom = "point",
+    position = position_dodge(width = 0.75),
+    shape = 21, size = 2, color = "black"
+  ) +
+  facet_grid(migr_dum ~ age_dum) +
+  labs(
+    x = "Subjective precarity",
+    y = "Dominance score",
+    fill = "Gender",
+    title = "Dominance across socio-demographic and precarity groups"
+  ) +
+  theme_classic(base_size = 10)
+ggsave("Emo_Results/Dominance across socio-demographic and precarity groups.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 1.3 Boxplot descriptives VAD dimensions across socio-demographic and precarity groups
+
+```{r VAD Scores per drivers of multidimensional precarity}
+vad_by_prec_group <- data |>
+  group_by(dum_normepres, dum_jobinsec, dum_endmeet, dum_unexpmix, ecoind) |>
+  mutate(
+    dum_normepres   = factor(dum_normepres,   levels = c(0,1), labels = c("No", "Yes")),
+    dum_jobinsec  = factor(dum_jobinsec,  levels = c(0,1), labels = c("No", "Yes")),
+    dum_endmeet  = factor(dum_endmeet,  levels = c(0,1), labels = c("No", "Yes")),
+    dum_unexpmix = factor(dum_unexpmix,   levels = c(0,1), labels = c("No", "Yes")),
+    ecoind = factor(ecoind,   levels = c(0,1), labels = c("No", "Yes")),
+  ) |> 
+  summarise(
+    n        = n(),
+    val_mean = mean(V_predicted, na.rm = TRUE),
+    val_sd   = sd(V_predicted, na.rm = TRUE),
+    aro_mean = mean(A_predicted, na.rm = TRUE),
+    aro_sd   = sd(A_predicted, na.rm = TRUE),
+    dom_mean = mean(D_predicted, na.rm = TRUE),
+    dom_sd   = sd(D_predicted, na.rm = TRUE),
+    .groups  = "drop"
+  )
+tibble(vad_by_prec_group)
+```
+
+```{r VAD scores per drivers of multidimensional precarity}
+prec_cat_vars <- c("dum_normepres", "dum_jobinsec", "dum_endmeet", "dum_unexpmix", "ecoind")
+
+## Valence
+V_prec_chi_results <- map_dfr(
+  prec_cat_vars,
+  ~ chisq.test(data[[.x]], data$V_dum) |>
+    tidy() |>
+    mutate(var = .x),
+  .id = NULL
+)
+tibble(V_prec_chi_results) # No significance (p-value)
+
+## Arousal
+A_prec_chi_results <- map_dfr(
+  prec_cat_vars,
+  ~ chisq.test(data[[.x]], data$A_dum) |>
+    tidy() |>
+    mutate(var = .x),
+  .id = NULL
+)
+tibble(A_prec_chi_results) # (p-value) significance for unexpected expensens and economic indipendence, almost acceptable vulnerability in employment (0.08691230)
+
+## Dominance
+D_prec_chi_results <- map_dfr(
+  prec_cat_vars,
+  ~ chisq.test(data[[.x]], data$D_dum) |>
+    tidy() |>
+    mutate(var = .x),
+  .id = NULL
+)
+tibble(D_prec_chi_results) # (p-value) significance making ends meet 
+```
+
+### 1.4 Descriptives and association levels on VAD Scores per precarity drivers
+
+```{r Valence by precarity drivers - boxplots}
+## Employment Vulnerability
+data |>
+  mutate(
+    dum_normepres = factor(dum_normepres,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_normepres, y = V_predicted, fill = dum_normepres)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Employment vulnerability",
+    y = "Predicted Valence scores",
+    title = "Predicted Valence by employment vulnerability"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Valence x Employment Vulnerability.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Job insecurity
+data |>
+  mutate(
+    dum_jobinsec = factor(dum_jobinsec,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_jobinsec, y = V_predicted, fill = dum_jobinsec)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Job Insecurity",
+    y = "Predicted Valence scores",
+    title = "Predicted Valence by job insecurity"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Valence x Job Insecurity.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Making ends meet
+data |>
+  mutate(
+    dum_endmeet = factor(dum_endmeet,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_endmeet, y = V_predicted, fill = dum_endmeet)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Making ends meet",
+    y = "Predicted Valence scores",
+    title = "Predicted Valence by end meet"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Valence x Making Ends Meet.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Capacity to pay unexpected expenses
+data |>
+  mutate(
+    dum_unexpmix = factor(dum_unexpmix,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_unexpmix, y = V_predicted, fill = dum_unexpmix)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Capacity to pay Unexpected Expenses",
+    y = "Predicted Valence scores",
+    title = "Predicted Valence by Capacity to pay Unexpected Expenses"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Valence x Capacity to Pay Unexpected Expenses.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Economic Indipendence
+data |>
+  mutate(
+    ecoind = factor(ecoind,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = ecoind, y = V_predicted, fill = ecoind)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Economic Independence",
+    y = "Predicted Valence scores",
+    title = "Predicted Valence by economic independence"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Valence x Economic Indipendence.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 1.5 Boxplot descriptives Valence by precarity drivers
+
+```{r Arousal by precarity drivers - boxplots}
+## Employment Vulnerability
+data |>
+  mutate(
+    dum_normepres = factor(dum_normepres,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_normepres, y = A_predicted, fill = dum_normepres)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Employment vulnerability",
+    y = "Predicted Arousal scores",
+    title = "Predicted Arousal by employment vulnerability"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Arousal x Employment Vulnerability.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Employment Vulnerability
+data |>
+  mutate(
+    dum_jobinsec = factor(dum_jobinsec,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_jobinsec, y = A_predicted, fill = dum_jobinsec)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Job Insecurity",
+    y = "Predicted Arousal scores",
+    title = "Predicted Arousal by job insecurity"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Arousal x Job Insecurity.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Making ends meet
+data |>
+  mutate(
+    dum_endmeet = factor(dum_endmeet,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_endmeet, y = A_predicted, fill = dum_endmeet)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Making ends meet",
+    y = "Predicted Arousal scores",
+    title = "Predicted Arousal by end meet"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Arousal x Making Ends Meet.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Capacity to pay unexpected expenses
+data |>
+  mutate(
+    dum_unexpmix = factor(dum_unexpmix,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_unexpmix, y = A_predicted, fill = dum_unexpmix)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Capacity to pay Unexpected Expenses",
+    y = "Predicted Arousal scores",
+    title = "Predicted Arousal by Capacity to pay Unexpected Expenses"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Arousal x Capacity to Pay Unexpected Expenses.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Economic Indipendence
+data |>
+  mutate(
+    ecoind = factor(ecoind,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = ecoind, y = A_predicted, fill = ecoind)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Economic Independence",
+    y = "Predicted Arousal scores",
+    title = "Predicted Arousal by economic independence"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Arousal x Economic Independence.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 1.6 Boxplot Descriptives Arousal by precarity drivers
+
+```{r Dominance by precarity drivers - boxplots}
+library(tidyverse)
+library(patchwork)
+
+# --- 1. Data Preparation ---
+# Ensure factors are labeled correctly for the plot
+data_plot <- data |>
+  mutate(
+    # Recode Precarity Group (0/1 to Low/High)
+    dum_prec_label = factor(dum_prec, 
+                            levels = c(0, 1), 
+                            labels = c("Low Prec.", "High Prec.")),
+    # Recode Gender (0/1 to Men/Women - adjust based on your specific coding)
+    gender_label = factor(gender, 
+                          levels = c(0, 1), 
+                          labels = c("Men", "Women"))
+  )
+
+# --- 2. Create the Left Plot: Valence ---
+p_valence <- data_plot |>
+  ggplot(aes(x = dum_prec_label, y = V_predicted, fill = gender_label)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4, outlier.size = 1) +
+  scale_fill_manual(values = c("#f8766d", "#00bfc4")) + # Salmon/Teal colors
+  labs(
+    x = "Subjective Precarity",
+    y = "Valence Score (1-5)",
+    title = "A. Valence"
+  ) +
+  theme_classic(base_size = 11) +
+  theme(legend.position = "none") # Hide legend for the first plot to save space
+
+# --- 3. Create the Right Plot: Dominance ---
+p_dominance <- data_plot |>
+  ggplot(aes(x = dum_prec_label, y = D_predicted, fill = gender_label)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4, outlier.size = 1) +
+  scale_fill_manual(values = c("#f8766d", "#00bfc4")) +
+  labs(
+    x = "Subjective Precarity",
+    y = "Dominance Score (1-5)",
+    title = "B. Dominance",
+    fill = "Gender"
+  ) +
+  theme_classic(base_size = 11)
+
+# --- 4. Combine and Save ---
+# Use patchwork to place them side-by-side
+combined_plot <- p_valence + p_dominance
+
+print(combined_plot)
+
+# Save with dimensions that fit a standard thesis page width
+ggsave("Emo_Results/Valence_Dominance_SideBySide.png", combined_plot, width = 9, height = 4.5, units = "in", dpi = 300)
+
+
+## Employment Vulnerability
+data |>
+  mutate(
+    dum_normepres = factor(dum_normepres,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_normepres, y = D_predicted, fill = dum_normepres)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Employment vulnerability",
+    y = "Predicted Dominance scores",
+    title = "Predicted Dominance by employment vulnerability"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Dominance x Employment Vulnerability.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Employment Vulnerability
+data |>
+  mutate(
+    dum_jobinsec = factor(dum_jobinsec,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_jobinsec, y = D_predicted, fill = dum_jobinsec)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Job Insecurity",
+    y = "Predicted Dominance scores",
+    title = "Predicted Dominance by job insecurity"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Dominance x Job Insecurity.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Making ends meet
+data |>
+  mutate(
+    dum_endmeet = factor(dum_endmeet,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_endmeet, y = D_predicted, fill = dum_endmeet)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Making ends meet",
+    y = "Predicted Dominance scores",
+    title = "Predicted Dominance by end meet"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Dominance x Making Ends Meet.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Capacity to pay unexpected expenses
+data |>
+  mutate(
+    dum_unexpmix = factor(dum_unexpmix,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = dum_unexpmix, y = D_predicted, fill = dum_unexpmix)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Capacity to pay Unexpected Expenses",
+    y = "Predicted Dominance scores",
+    title = "Predicted Dominance by Capacity to pay Unexpected Expenses"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Dominance x Capacity to Pay Unexpected Expenses.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Economic Indipendence
+data |>
+  mutate(
+    ecoind = factor(ecoind,
+                           levels = c(0, 1),
+                           labels = c("No", "Yes"))
+  ) |>
+  ggplot(aes(x = ecoind, y = D_predicted, fill = ecoind)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(
+    x = "Economic Independence",
+    y = "Predicted Dominance scores",
+    title = "Predicted Dominance by economic independence"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(fill = "none")
+ggsave("Emo_Results/Dominance Economic Independence.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 1.7 Boxplot descriptives Dominance by precarity drivers
+
+```{r VAD scores per normalised self-perceived precarity - normalisation and correlation test}
+## To keep same measurement scale we normalised VAD score
+
+## Valence - normalised
+data <- data |>
+  mutate(
+    V_norm = (V_predicted - min(V_predicted, na.rm = TRUE)) /
+                (max(V_predicted, na.rm = TRUE) - min(V_predicted, na.rm = TRUE))
+  )
+
+data |> 
+  count(V_norm)
+
+## Arousal - normalised 
+data <- data |>
+  mutate(
+    A_norm = (A_predicted - min(A_predicted, na.rm = TRUE)) /
+                (max(A_predicted, na.rm = TRUE) - min(A_predicted, na.rm = TRUE))
+  )
+
+data |> 
+  count(A_norm)
+
+## Dominance - normalised 
+data <- data |>
+  mutate(
+    D_norm = (D_predicted - min(D_predicted, na.rm = TRUE)) /
+                (max(D_predicted, na.rm = TRUE) - min(D_predicted, na.rm = TRUE))
+  )
+
+data |> 
+  count(D_norm)
+
+## Calcuted correlation and p-value
+## All variables are significative, but with weakly correlation
+cor.test(data$normprec, data$V_norm) # 0.07954171 
+cor.test(data$normprec, data$A_norm) # 0.04536515
+cor.test(data$normprec, data$D_norm) # 0.0521304
+```
+
+```{r visualisation through scatterplot (Precarity as a function of VAD)}
+## Valence
+data |>
+  ggplot(aes(x = V_norm, y = normprec)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(
+    x = "Normalised Valence score",
+    y = "Normalised precarity index (0–1)",
+    title = "Valence as a function of precarity"
+  ) +
+  theme_classic()
+ggsave("Emo_Results/Valence as a function of precarity.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Arousal
+data |>
+  ggplot(aes(x = A_norm, y = normprec)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(
+    x = "Normalised Arousal score",
+    y = "Normalised precarity index (0–1)",
+    title = "Arousal as a function of precarity"
+  ) +
+  theme_classic()
+ggsave("Emo_Results/Arousal as a function of precarity.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Dominance
+data |>
+  ggplot(aes(x = D_norm, y = normprec)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(
+    x = "Normalised Dominance score",
+    y = "Normalised precarity index (0–1)",
+    title = "Dominance as a function of precarity"
+  ) +
+  theme_classic()
+ggsave("Emo_Results/Dominance as a function of precarity.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 1.5 Scatterplots normalised VAD Scores per normalised self-perceived precarity
+
+```{r stepwise regression model - normalised precarity as a function of vad scores (normalised)}
+## model may pass p-value test but with low adjusted R2 (i.e. explained variability of outcome variable)
+
+## Valence
+model_val <- lm(normprec ~ V_norm, data = data)
+summary(model_val)
+
+## Arousal
+model_aro <- lm(normprec ~ A_norm, data = data)
+summary(model_aro)
+
+## Dominance
+model_dom <- lm(normprec ~ D_norm, data = data)
+summary(model_dom)
+
+## VAD Model
+model_vad <- lm(normprec ~ V_norm + A_norm + D_norm, data = data)
+summary(model_vad) # all independents variables are significatives, however polarity of valence should be switched - from positive to negative - to be meaningful
+```
+
+```{r stepwise regression model - normalised precarity as a function of vad scores (predicted)}
+## Looking at adjusted R-squared (e.g. 0.01251 in the first model),  unfortunately it's very low explained variance in the outcome variable 
+
+## VAD predicted
+model_vadpredicted <- lm(normprec ~ V_predicted + A_predicted + D_predicted, data = data)
+summary(model_vadpredicted) # same as above with Predicted values (-3,+3)
+
+## Valence predicted
+model_valpredicted <- lm(normprec ~ V_predicted, data = data)
+summary(model_valpredicted) # positive (why? because it starts from zero?) higly significative 
+
+## Arousal predicted
+model_aropredicted <- lm(normprec ~ A_predicted, data = data)
+summary(model_aropredicted) # positive, midly significative
+
+## Dominance predicted
+model_dompredicted <- lm(normprec ~ D_predicted, data = data)
+summary(model_dompredicted) # effect is positive (why?) not very significative
+```
+
+### 1.9 Regression Models: (Normprec) function of VAD (Normalised and Predicted scores)
+
+```{r stepwise regression model - sociodemographic characteristics}
+## Model changed from linear to logit 
+
+model_logit <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum), data = data, family = binomial)
+summary(model_logit) # arousal weakly significative
+
+model_socio1 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(gender), data = data, family = binomial)
+summary(model_socio1) # only gender and arousal are respectively midly and weakly significative
+
+model_socio2 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(gender) + factor(age_dum), data = data, family = binomial)
+summary(model_socio2)
+
+model_socio3 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(gender) + factor(age_dum) + factor(migr_dum), data = data, family = binomial)
+summary(model_socio3)
+```
+
+### 1.10 Sociodemographic Regression Models
+
+```{r stepwise regression model - precarity related indicators}
+## As expected all previously tested indicators are reliable and distinctive indicators of precarity. VAD dimensions are not meaningful when precarity-related indicators are included in the model 
+
+model_prec1 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(dum_normepres), data = data, family = binomial)
+summary(model_prec1)
+
+model_prec2 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(dum_normepres) + factor(dum_jobinsec), data = data, family = binomial)
+summary(model_prec2)
+
+model_prec3 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(dum_normepres) + factor(dum_jobinsec) + factor(dum_endmeet), data = data, family = binomial)
+summary(model_prec3)
+
+model_prec4 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(dum_normepres) + factor(dum_jobinsec) + factor(dum_endmeet) + factor(dum_unexpmix), data = data, family = binomial)
+summary(model_prec4)
+
+model_prec5 <- glm(dum_prec ~ factor(V_dum) + factor(A_dum) + factor(D_dum) + factor(dum_normepres) + factor(dum_jobinsec) + factor(dum_endmeet) + factor(dum_unexpmix) + factor(ecoind), data = data, family = binomial)
+summary(model_prec5)
+```
+
+------------------------------------------------------------------------
+
+## Part 2: Predicted Emotions - Ungrouped -
+
+```{r Selfperceived precarity x predicted emotions - logistical regression model}
+model_emopred <- glm(
+  dum_prec ~
+    admiration_pred +
+    amusement_pred +
+    anger_pred +
+    annoyance_pred +
+    approval_pred +
+    caring_pred +
+    confusion_pred +
+    curiosity_pred +
+    desire_pred +
+    disappointment_pred +
+    disapproval_pred +
+    disgust_pred +
+    embarrassment_pred +
+    excitement_pred +
+    fear_pred +
+    gratitude_pred +
+    grief_pred +
+    joy_pred +
+    love_pred +
+    nervousness_pred +
+    optimism_pred +
+    pride_pred +
+    realization_pred +
+    relief_pred +
+    remorse_pred +
+    sadness_pred +
+    surprise_pred +
+    neutral_pred,
+  data   = data,
+  family = binomial
+)
+summary(model_emopred)
+```
+
+```{r Subsetting dataset}
+## Subset the original dataset
+emo_data <- data |> 
+  select(ID, gender, age_dum, migr_dum, dum_prec, normprec, dum_normepres,dum_jobinsec, dum_endmeet, dum_unexpmix, ecoind, V_predicted, A_predicted, D_predicted, V_dum, A_dum, D_dum, ends_with("_pred"))
+glimpse(emo_data)
+```
+
+```{r Transform subset from wide to long}
+## Only emotions are transformed
+emo_data <- emo_data |>
+  pivot_longer(
+    cols = ends_with("_pred"),
+    names_to = "emotion",
+    values_to = "value"
+  ) |>
+  mutate(
+    emotion = str_remove(emotion, "_pred$")
+  )
+glimpse(emo_data)
+```
+
+### 2.0 Subsetting of original dataset and transformation from wide-to-long
+
+```{r Barplot predicted emotions - with neutral included}
+emo_data |>
+  group_by(emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop" # remove emotions which have zero observation
+  ) |>
+  mutate(emotion = fct_reorder(emotion, perc)) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    hjust = -0.1 # move labels slightly to the right of the bar
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions from self-definition of precarity"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions from self-definition of precarity.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 2.1 Barplot of predicted emotions
+
+```{r Predicted Emotions in socio-demographic characteristics - gender}
+## Grouped frequencies
+emo_data |> 
+  group_by(gender, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(gender, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(gender, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    gender = if_else(gender == 1, "Women", "Men"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ gender) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Gender - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x gender_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(gender, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    gender = if_else(gender == 1, "Women", "Men"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = gender)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Gender - Overlapped %",
+    fill = "Gender"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x gender_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Predicted Emotions in socio-demographic characteristics - age}
+## Grouped frequencies
+emo_data |> 
+  group_by(age_dum, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(age_dum, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(age_dum, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    age_dum = if_else(age_dum == 1, ">= 30", "< 30"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ age_dum) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Age - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Age_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(age_dum, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    age_dum = if_else(age_dum == 1, ">= 30", "< 30"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = age_dum)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Age - Overlapped %",
+    fill = "Age_dum"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Age_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Predicted Emotions in socio-demographic characteristics - migration background}
+## Grouped frequencies
+emo_data |> 
+  group_by(migr_dum, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(migr_dum, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(migr_dum, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    migr_dum = if_else(migr_dum == 1, "Migrant", "Autoctonous"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ migr_dum) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Migration Background - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Migration Background_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(migr_dum, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    migr_dum = if_else(migr_dum == 1, "Migrant", "Autoctonous"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = migr_dum)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Migrant Background - Overlapped %",
+    fill = "Migrant_dum"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Migrant Background_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 2.2 Predicted emotions per socio-demographic characteristics (frequencies' distribution and plot)
+
+```{r Regression model: predicted emotions as a function of the interaction between predicted emotions and socio-demographic effects}
+# consider that including the random intercept effect ((1 | ID)) with ungrouped predicted emotions complexify a lot the model - it takes more time to converge -, consider including if relevant 
+# 
+## Gender
+mod_glm_gender <- glm(
+  value ~ gender * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_gender) 
+
+## Age
+mod_glm_age <- glm(
+  value ~ age_dum * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_age)
+
+## Migration Background
+mod_glm_migration <- glm(
+  value ~ migr_dum * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_migration)
+```
+
+### 2.3 Predicted emotion per socio-demographic characteristics (logistic regression models - ungrouped emotions)
+
+Negative emotions such as disappointment and sadness are far more likely than other emotions in both genders, and although small percentage differences emerge between men and women, the logistic model does not detect significant gender effects on the probabilities of the predicted emotions, so the overall emotional pattern is largely overlapping across groups. In the materials analysed, precarity is thematized as a strongly negative condition in a broadly shared way: the discrete emotions that surface (especially disappointment and sadness) characterize all groups similarly, and the models show no significant interaction effects between precariousness or gender and specific emotions, suggesting that precariousness, as defined and narrated by the respondents, operates primarily as a common stressor rather than as an emotionally differentiated experience across social groups.
+
+```{r Predicted Emotions per drivers of precarity - employment vulnerability}
+## Grouped frequencies
+emo_data |> 
+  group_by(dum_normepres, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(dum_normepres, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(dum_normepres, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_normepres = if_else(dum_normepres == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ dum_normepres) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Employment Vulnerability - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Employment Vulnerability_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(dum_normepres, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_normepres = if_else(dum_normepres == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = dum_normepres)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Employment Vulnerability - Overlapped %",
+    fill = "dum_normepres"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Employment Vulnerability_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Predicted Emotions per drivers of precarity - jobinsec}
+## Grouped frequencies
+emo_data |> 
+  group_by(dum_jobinsec, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(dum_jobinsec, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(dum_jobinsec, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_jobinsec = if_else(dum_jobinsec == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ dum_jobinsec) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Job Insecurity - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Job Insecurity_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(dum_jobinsec, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_jobinsec = if_else(dum_jobinsec == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = dum_jobinsec)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Job Insecurity - Overlapped %",
+    fill = "dum_jobinsec"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Job Insecurity_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Predicted Emotions per drivers of precarity - making ends meet}
+## Grouped frequencies
+emo_data |> 
+  group_by(dum_endmeet, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(dum_endmeet, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(dum_endmeet, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_endmeet = if_else(dum_endmeet == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ dum_endmeet) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Making Ends Meet - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Making Ends Meet_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(dum_endmeet, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_endmeet = if_else(dum_endmeet == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = dum_endmeet)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Making Ends Meet - Overlapped %",
+    fill = "dum_endmeet"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Making Ends Meet_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Predicted Emotions per drivers of precarity - unexpected expenses}
+## Grouped frequencies
+emo_data |> 
+  group_by(dum_unexpmix, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(dum_unexpmix, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(dum_unexpmix, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_unexpmix = if_else(dum_unexpmix == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ dum_unexpmix) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Capacity to Pay Unexpected Expenses - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Capacity to Pay Unexpected Expenses_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(dum_unexpmix, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_unexpmix = if_else(dum_unexpmix == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = dum_unexpmix)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Capacity to Pay Unexpected Expenses - Overlapped %",
+    fill = "dum_unexpmix"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Capacity to Pay Unexpected Expenses_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Predicted Emotions per drivers of precarity - economic independence}
+library(tidyverse)
+
+# 1. Identify the Top 5 Emotions generally
+top_emotions <- emo_data |>
+  count(emotion, wt = value) |>
+  slice_max(n, n = 5) |>
+  pull(emotion)
+
+# 2. Filter data for these emotions and Group by Gender
+plot_data <- emo_data |>
+  filter(emotion %in% top_emotions) |>
+  group_by(gender, emotion) |>
+  summarise(
+    percentage = mean(value, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    gender_label = factor(gender, levels = c(0, 1), labels = c("Men", "Women")),
+    emotion = factor(emotion, levels = top_emotions) # Keep order
+  )
+
+# 3. Create the Grouped Bar Plot
+ggplot(plot_data, aes(x = emotion, y = percentage, fill = gender_label)) +
+  geom_col(position = "dodge", alpha = 0.8, width = 0.7) +
+  geom_text(
+    aes(label = scales::percent(percentage, accuracy = 0.1)),
+    position = position_dodge(width = 0.7),
+    vjust = -0.5,
+    size = 3.5
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Top 5 Emotions by Gender",
+    subtitle = "Visualizing the similarity in emotional vocabulary",
+    x = NULL,
+    y = "Prevalence (%)",
+    fill = "Gender"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+ggsave("Emo_Results/Top5_Emotions_by_Gender.png", width = 8, height = 5, dpi = 300)
+
+library(reshape2)
+
+# Select only emotion columns (binary 0/1)
+# You might need to pivot your data back to wide format first if it's currently long
+emo_wide <- emo_data |>
+  filter(emotion %in% top_emotions) |> # Stick to top emotions to keep it readable
+  pivot_wider(names_from = emotion, values_from = value) |>
+  select(all_of(top_emotions))
+
+# Calculate Correlation
+cor_matrix <- cor(emo_wide, use = "pairwise.complete.obs")
+
+# Plot Heatmap
+melted_cormat <- melt(cor_matrix)
+ggplot(data = melted_cormat, aes(Var2, Var1, fill = value)) +
+ geom_tile(color = "white") +
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Correlation") +
+ theme_minimal() + 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1)) +
+ coord_fixed() +
+ labs(title = "Co-occurrence of Top Emotions", x=NULL, y=NULL)
+
+ggsave("Emo_Results/Emotion_Correlation_Heatmap.png", width = 6, height = 5, dpi = 300)
+```
+
+### 2.3 Predicted emotions per drivers of precarity (frequencies' distributions and plots)
+
+```{r regression models: predicted emotions as a function of the interaction between drivers of precarity and emotion - ungrouped}
+## Employment Vulnerability
+mod_glm_normepres <- glm(
+  value ~ dum_normepres * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_normepres)
+
+## Job Insecurity
+mod_glm_jobinsec <- glm(
+  value ~ dum_jobinsec * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_jobinsec)
+
+## Making Ends Meet
+mod_glm_endmeet <- glm(
+  value ~ dum_endmeet * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_endmeet)
+
+## Capacity to Pay Unexpected Expenses
+mod_glm_unexpmix <- glm(
+  value ~ dum_unexpmix * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_unexpmix)
+
+## Self perceived Economic Independence
+mod_glm_ecoind <- glm(
+  value ~ ecoind * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_ecoind)
+```
+
+### 2.4. Regression model: predicted emotions as a function of the interaction between drivers of precarity and predicted emotion - ungrouped
+
+```{r Predicted Emotions per self-perceived precarity}
+## Grouped frequencies
+emo_data |> 
+  group_by(dum_prec, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |> 
+  arrange(dum_prec, desc(perc), .by_group = TRUE) # sorted by higher predicted emotion first
+
+## Sided %
+emo_data |>
+  group_by(dum_prec, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_prec = if_else(dum_prec == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            hjust = -0.1, size = 2.8) +
+  coord_flip() +
+  facet_wrap(~ dum_prec) +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Selfperceived precarity - Sided %"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Selfperceived Precarity_sided percentages.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+## Overlapped %
+emo_data |>
+  group_by(dum_prec, emotion) |>
+  summarise(
+    perc = mean(value, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) |>
+  mutate(
+    dum_prec = if_else(dum_prec == 1, "Higher", "Lower"),
+    emotion = fct_reorder(emotion, perc)
+  ) |>
+  ggplot(aes(x = emotion, y = perc, fill = dum_prec)) +
+  geom_col(position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", perc)),
+    position = position_dodge(width = 0.7),
+    hjust = -0.1, size = 2.8
+  ) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "% predicted emotions",
+    title = "Predicted emotions per Selfperceived Precarity - Overlapped %",
+    fill = "Dum_prec"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted emotions x Selfperceived Precarity_overlapped percenteges.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+### 2.5 Predicted Emotions x selfperceived precarity (frequencies' distribution and plots)
+
+```{r Regression model: Predicted Emotions as a function of the interaction between Self Perceived Precarity (dummy) and predicted emotions - ungrouped}
+mod_glm_prec <- glm(
+  value ~ dum_prec * factor(emotion),
+  data   = emo_data,
+  family = binomial
+)
+summary(mod_glm_prec)
+```
+
+### 2.6. Regression model: Predicted Emotions as a function of the interaction between Self Perceived Precarity (dummy) and predicted emotions - ungrouped
+
+------------------------------------------------------------------------
+
+## Part 3: Sentiment Groups - Grouped Predicted Emotions -
+
+```{r Sentiment groups recode}
+# I will use the original wide dataset (data non emo_data)
+data <- data |>
+  rowwise() |>
+  mutate(
+    any_pos = any(c_across(c(admiration_pred, amusement_pred, approval_pred,
+                             caring_pred, curiosity_pred, desire_pred,
+                             excitement_pred, gratitude_pred, joy_pred,
+                             love_pred, optimism_pred, pride_pred,
+                             realization_pred, relief_pred, surprise_pred)) == 1),
+    any_neg = any(c_across(c(anger_pred, annoyance_pred, confusion_pred,
+                             disappointment_pred, disapproval_pred, disgust_pred,
+                             embarrassment_pred, fear_pred, grief_pred,
+                             nervousness_pred, remorse_pred, sadness_pred)) == 1),
+    only_neu = (neutral_pred == 1 & !any_pos & !any_neg),
+    sentiment_group = case_when(
+      only_neu           ~ "Neutral",
+      any_pos & !any_neg ~ "Positive",
+      any_neg & !any_pos ~ "Negative",
+      any_pos & any_neg  ~ "Ambivalent",
+      TRUE               ~ "Neutral"
+    ),
+    sentiment_group = factor(
+      sentiment_group,
+      levels = c("Neutral","Positive", "Negative", "Ambivalent")
+    )
+  ) |>
+  ungroup()
+
+data |> 
+  count(sentiment_group) # I confirm frequencies on Tomasi's python sintax 
+
+# bar plot sentiment_group
+data |>
+  ggplot(aes(x = sentiment_group)) +
+  geom_bar(aes(fill = factor(sentiment_group))) +
+  scale_fill_manual(
+    values = c("1" = "#B0B0B0",  "2" = "#1B9E77",  "3" = "#D95F02",  "4" = "#7570B3"),
+    labels = c("Neutral","Positive", "Negative", "Ambivalent"),
+    name   = NULL
+  ) +
+  labs(
+    title = "Predicted Sentiment Groups - bar plot",
+    x = "Predicted emotions (sentiment groups recode)"
+  ) +
+  theme_minimal()
+ggsave("Emo_Results/Predicted Sentiment Groups - bar plot.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r Sentiment groups per self-perceived precarity}
+mod_glm_sentprec <- glm(
+  dum_prec ~ factor(sentiment_group),
+  data   = data,
+  family = binomial
+)
+summary(mod_glm_sentprec)
+# factor(sentiment_group)Negative -0.3091 0.1282 -2.411 0.0159 *; perché l'estimate ha segno negativo
+
+data <- data |> 
+  mutate(sentg_dum = ifelse(sentiment_group == "Neutral", 0, 1))
+
+## Defined a dummy, as "to be assigned to a sentiment group vs being neutral"
+data |> 
+  count(sentg_dum)
+
+mod_glm_sentdum <- glm(
+  dum_prec ~ factor(sentg_dum),
+  data   = data,
+  family = binomial
+)
+summary(mod_glm_sentdum) # Even emotional vs neutral gives a negative beta factor(sentg_dum)1 -0.2364 0.1252 -1.889 0.0589 *.  
+```
+
+```{r Being emotional is a fuction sociodemographic factor and drivers of precarity}
+## Sociodemographic characteristics
+mod_socio_sent <- glm(
+  sentg_dum ~ factor(gender) + factor(age_dum) + factor(migr_dum),
+  data   = data,
+  family = binomial
+)
+summary(mod_socio_sent) # factor(gender)1    0.33790    0.10201   3.312 0.000925 *** it appear to be a relationship with gender (positive)
+
+# Precarity-related drivers
+mod_prec_sent <- glm(
+  sentg_dum ~ factor(dum_normepres) + factor(dum_jobinsec) + factor(dum_endmeet) + factor(dum_unexpmix) + factor(ecoind),
+  data   = data,
+  family = binomial
+)
+summary(mod_prec_sent) # factor(dum_jobinsec)1  -0.26023    0.11936  -2.180   0.0292 *, (why is it negative?)
+```
+
+### 3.1 Self-perceived precarity as a function of Sentiment Groups
+
+------------------------------------------------------------------------
+
+## Part 4: STM x Predicted Emotions
+
+```{r Save preparatory data from previous analyses}
+#saveRDS(data, file = ("~/Desktop/file_r/data/Emo_Processed Data/dataset_last.rds") # last version of the dataset
+```
+
+```{r TextPreprocessing}
+# See in STM_DiLiberatore_Model (Script) the key factor to replicate Di Liberatore's 20k model was the stoplist
+## Load Di liberatore Environment
+#load("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/environment_diLiberatore.RData")
+
+## load the last version of my dataset
+data_last <- readRDS("~/Desktop/file_r/data/dataset_last.rds")
+
+emo_processed <- textProcessor(
+  documents = data_last$text,
+  metadata = data_last,
+  language = "english",
+  stem = TRUE,
+  removestopwords = TRUE,       
+  customstopwords = words, # this is the final stoplist
+  custompunctuation = c("-"),
+  verbose = FALSE
+)
+
+emo_out <- prepDocuments(
+  documents = emo_processed$documents,
+  vocab = emo_processed$vocab,
+  meta = emo_processed$meta
+)
+
+emo_docs <- emo_out$documents
+emo_vocab <- emo_out$vocab
+emo_meta <- emo_out$meta
+
+# Removing 720 of 1581 terms (720 of 16532 tokens) due to frequency 
+# Removing 14 Documents with No Words 
+# Your corpus now has 2459 documents, 861 terms and 15812 tokens.
+```
+
+```{r base model - Di Liberatore 2025}
+model_base <- stm(documents = emo_docs,
+               vocab = emo_vocab, 
+               K = 20,
+               data = emo_meta,
+               verbose = FALSE,seed=2024)
+
+plot(model_base, type = "summary", xlim = c(0, .3), main = "Model base") # I confirm it's the same model
+ggsave("Emo_Results/Model_base_topicsproportions.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+# 1. Load the model you already saved (it has the same topics!)
+model_ready <- readRDS("~/Downloads/Rev_Emotion 3/Emo_Processed Data/Model_emotion_predicted_ungrouped.rds")
+
+# 2. Print the labels for all 20 topics
+# This will show us the "Highest Probability" and "FREX" words we need for the thesis.
+labelTopics(model_ready, n = 7)
+```
+
+```{r Predicted Emotions in prevalence - topics proportions per ungroped and grouped emotions}
+m_ungrp_predemo <- stm(documents = emo_docs,
+               vocab = emo_vocab, 
+               K = 20,
+               prevalence = ~ admiration_pred + amusement_pred + anger_pred + annoyance_pred + approval_pred + caring_pred + confusion_pred + curiosity_pred + desire_pred + disappointment_pred + disapproval_pred + disgust_pred + embarrassment_pred + excitement_pred + fear_pred + gratitude_pred + grief_pred + joy_pred + love_pred + nervousness_pred + optimism_pred + pride_pred + neutral_pred,  
+               data = emo_meta,
+               verbose = FALSE,seed=2024)
+saveRDS(m_ungrp_predemo, file = "C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Model_emotion_predicted_ungrouped.rds") # save the model
+
+m_ungrp_predemo <- readRDS("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Model_emotion_predicted_ungrouped.rds") # load the model 
+plot(m_ungrp_predemo, type = "summary", xlim = c(0, .3), main = "Model Emotion Predicted - ungrouped -") 
+ggsave("Emo_Results/Model Emotion Predicted - ungrouped.png", width  = 6, height = 4, units = "in", dpi = 300)
+
+m_grp_predemo <- stm(documents = emo_docs,
+               vocab = emo_vocab, 
+               K = 20,
+               prevalence = ~ sentiment_group,  
+               data = emo_meta,
+               verbose = FALSE,seed=2024)
+saveRDS(m_grp_predemo, file = "C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Model_emotion_predicted_grouped.rds") # save the model 
+
+m_grp_predemo <- readRDS("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Model_emotion_predicted_grouped.rds") # load the model
+plot(m_grp_predemo, type = "summary", xlim = c(0, .3), main = "Model Emotion Predicted - Grouped -") 
+ggsave("Emo_Results/Model Emotion Predicted - grouped.png", width  = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r top2 relevant Documents per topics - Ungrouped Predicted Emotions}
+## Ungrouped predicted emotions
+
+# open a loop
+K <- m_ungrp_predemo$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Results/STM_Topic_Quotes_Model_with_ungrouped_emotions.pdf", width = 8, height = 6)
+
+for (k in 1:K) {
+  # findThoughts returns a list $docs, where each element corresponds to one topic
+  # Here we extract the first (and only) element for the current topic k
+  thoughts_ungrp <- findThoughts(m_ungrp_predemo,
+                           texts = ans_lis_filter,
+                           n = 2,      # number of representative phrases per topic
+                           topics = k)$docs[[1]]
+  
+  # Plot the representative phrases for the current topic
+  plotQuote(thoughts_ungrp,
+            main = paste("Topic", k),
+            width = 80,     # maximum line width for each phrase
+            text.cex = 0.8) # font size for the text
+}
+#close pdf
+dev.off()
+```
+
+```{r top2 relevant Documents per topics - Grouped Predicted Emotions}
+## Gropued Predicted emotions - Sentiment groups
+# open a loop
+K <- m_grp_predemo$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Results/STM_Topic_Quotes_Model_with_grouped_emotions.pdf", width = 8, height = 6)
+
+for (k in 1:K) {
+  # findThoughts returns a list $docs, where each element corresponds to one topic
+  # Here we extract the first (and only) element for the current topic k
+  thoughts_grp <- findThoughts(m_grp_predemo,
+                           texts = ans_lis_filter,
+                           n = 2,      # number of representative phrases per topic
+                           topics = k)$docs[[1]]
+  
+  # Plot the representative phrases for the current topic
+  plotQuote(thoughts_grp,
+            main = paste("Topic", k),
+            width = 80,     # maximum line width for each phrase
+            text.cex = 0.8) # font size for the text
+}
+#close pdf
+dev.off()
+```
+
+```{r Wordcloud per topic - ungrouped emotions}
+# open a loop
+K <- m_ungrp_predemo$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Results/STM_Wordcloud_model_ungrouped emotions.pdf", width = 8, height = 6)
+
+#model_1 no covariates
+for (k in 1:K) {
+cloud(m_ungrp_predemo, topic = k, scale = c(2,.25))
+  title(main = paste0("Model - ungrouped predicted emotions | Topic ", k))
+}
+
+# close pdf
+dev.off()
+```
+
+```{r Wordcloud per topic - grouped emotions or sentiment groups}
+# open a loop
+K <- m_grp_predemo$settings$dim$K  # total number of topics in the STM
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Results/STM_Wordcloud_model_grouped emotions.pdf", width = 8, height = 6)
+
+#model_1 no covariates
+for (k in 1:K) {
+cloud(m_grp_predemo, topic = k, scale = c(2,.25))
+  title(main = paste0("Model - grouped predicted emotions | Topic ", k))
+}
+
+# close pdf
+dev.off()
+```
+
+```{r Estimate effects}
+K <- model_base$settings$dim$K 
+for (k in 1:K) {
+effects_emopred_ungrp <- estimateEffect(1:K ~ admiration_pred + amusement_pred + anger_pred + annoyance_pred + approval_pred + caring_pred + confusion_pred + curiosity_pred + desire_pred + disappointment_pred + disapproval_pred + disgust_pred + embarrassment_pred + excitement_pred + fear_pred + gratitude_pred + grief_pred + joy_pred + love_pred + nervousness_pred + optimism_pred + pride_pred + neutral_pred,  
+                          stmobj = m_ungrp_predemo,
+                          metadata = emo_meta, 
+                          uncertainty = "Global")
+
+effects_emopred_grp <- estimateEffect(1:K ~ sentiment_group,  
+                          stmobj = m_grp_predemo,
+                          metadata = emo_meta, 
+                          uncertainty = "Global")
+}
+
+saveRDS(effects_emopred_ungrp, file = "C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Effect_predicted_ungrouped.rds")
+saveRDS(effects_emopred_grp, file = "C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Effect_predicted_grouped.rds")
+```
+
+```{r Summary estimated effect of each covariate}
+effects_emopred_ungrp <- readRDS("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Effect_predicted_ungrouped.rds")
+effects_emopred_grp <- readRDS("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Effect_predicted_grouped.rds")
+
+cat("EFFECTS Emopred_ungrp\n")
+summary_effects_emopred_ungrp <- capture.output((summary(effects_emopred_ungrp, topic = 1:20)), sep = "\n")
+print(summary_effects_emopred_ungrp)
+
+cat("EFFECTS Emopred_grp\n")
+summary_effects_emopred_grp <- capture.output((summary(effects_emopred_grp, topic = 1:20)), sep = "\n")
+print(summary_effects_emopred_grp)
+```
+
+```{r Plot covariates effects over topics' proportions (difference) - ungrouped emotions}
+effects_emopred_ungrp <- readRDS("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Effect_predicted_ungrouped.rds")
+# save results in pdf
+pdf("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Results/STM_Estimateffect_ungrouped emotions.pdf", width = 8, height = 6)
+
+# Admiration
+plot(effects_emopred_ungrp,
+     covariate = "admiration_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Admiration on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Amusement
+plot(effects_emopred_ungrp,
+     covariate = "amusement_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Amusement on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Anger
+plot(effects_emopred_ungrp,
+     covariate = "anger_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Anger on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Annoyance
+plot(effects_emopred_ungrp,
+     covariate = "annoyance_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Annoyance on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Approval
+plot(effects_emopred_ungrp,
+     covariate = "approval_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Approval on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Caring
+plot(effects_emopred_ungrp,
+     covariate = "caring_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Caring on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Confusion
+plot(effects_emopred_ungrp,
+     covariate = "confusion_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Confusion on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Curiosity
+plot(effects_emopred_ungrp,
+     covariate = "curiosity_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Curiosity on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Desire
+plot(effects_emopred_ungrp,
+     covariate = "desire_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Desire on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Disappointment
+plot(effects_emopred_ungrp,
+     covariate = "disappointment_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Disappointment on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Disapproval
+plot(effects_emopred_ungrp,
+     covariate = "disapproval_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Disapproval on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Disgust
+plot(effects_emopred_ungrp,
+     covariate = "disgust_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Disgust on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Embarrassment
+plot(effects_emopred_ungrp,
+     covariate = "embarrassment_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Embarrassment on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Excitement
+plot(effects_emopred_ungrp,
+     covariate = "excitement_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Excitement on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Fear
+plot(effects_emopred_ungrp,
+     covariate = "fear_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Fear on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Gratitude
+plot(effects_emopred_ungrp,
+     covariate = "gratitude_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Gratitude on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Grief
+plot(effects_emopred_ungrp,
+     covariate = "grief_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Grief on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Joy
+plot(effects_emopred_ungrp,
+     covariate = "joy_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Joy on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Love
+plot(effects_emopred_ungrp,
+     covariate = "love_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Love on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Nervousness
+plot(effects_emopred_ungrp,
+     covariate = "nervousness_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Nervousness on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Optimism
+plot(effects_emopred_ungrp,
+     covariate = "optimism_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Optimism on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# Pride
+plot(effects_emopred_ungrp,
+     covariate = "pride_pred",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Predicted Pride on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+
+# close pdf
+dev.off()
+```
+
+```{r Plot covariates effects over topics proportions - sentiment group recode}
+effects_emopred_grp <- readRDS("C:/Users/vicio/Desktop/Rev_Emotion/Emo_Processed Data/Effect_predicted_grouped.rds")
+
+## Recode variable and estime again the model (it should be turned into a dummy, right now might be a continous numerical) [] 
+
+plot(effects_emopred_grp,
+     covariate = "sentiment_group",
+     method = "difference",
+     topics = 1:20,
+     cov.value1 = "1",
+     cov.value2 = "0",
+     main = "Effect of Being in a Sentiment Group on Topics",
+     xlab = "Δ topic prevalence (1 vs 0)",
+     labeltype  = "custom",
+     custom.labels = paste("Topic", 1:20),
+     width = 15)
+```

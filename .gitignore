@@ -1,0 +1,20 @@
+# --- File di sistema ---
+.DS_Store
+Thumbs.db
+.idea/
+
+# --- Python ---
+# Ambienti virtuali
+#venv/
+#.venv/
+# Cache
+#__pycache__/
+
+# --- R Project ---
+#.Rhistory
+#.RData
+#.Rproj.user/
+
+# --- Cartelle ---
+bibliografia
+
