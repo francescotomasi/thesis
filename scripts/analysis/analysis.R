@@ -16,7 +16,7 @@ library(fpc)
 library(factoextra) 
 library(textmineR) 
 library(Matrix)
-df <- read_xlsx("~/Desktop/Tesi/file_r/data/df_complete_3.xlsx")
+df <- read_xlsx("/Users/macpro/Desktop/UNIVERSITA/Tomasi-tesi/scripts/analysis/data/merged_BERT_survey.xlsx")
 processed <- textProcessor(
   documents = df$text, 
   metadata = df,
@@ -156,7 +156,7 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)  # for pivot_longer
 
-df <- read_xlsx("~/Desktop/Tesi/file_r/data/df_complete_3.xlsx")
+df <- read_xlsx("/Users/macpro/Desktop/UNIVERSITA/Tomasi-tesi/scripts/analysis/data/merged_BERT_survey.xlsx")
 emotions <- c("admiration_pred", "amusement_pred", "anger_pred", "annoyance_pred", "approval_pred", 
               "caring_pred", "confusion_pred", "curiosity_pred", "desire_pred", "disappointment_pred", 
               "disapproval_pred", "disgust_pred", "embarrassment_pred", "excitement_pred", "fear_pred", 
@@ -235,7 +235,7 @@ data <- data |> mutate(
   dum_jobinsec  = if_else(jobinsec %in% c(1, 2), 1, 0),
   dum_endmeet   = if_else(endmeet %in% c(1, 2), 1, 0),
   dum_unexpmix  = if_else(unexpmix %in% c(1), 1, 0),
-  sentg_dum = ifelse(sentiment_group == "neutral", 0, 1)
+  sentg_dum = ifelse(predicted_emotions == "neutral", 0, 1)
 )
 ## Defined a dummy, as "to be assigned to a sentiment group vs being neutral"
 data |> 
@@ -381,85 +381,14 @@ summary(mod_prec_sent) # factor(dum_jobinsec)1  -0.26023    0.11936  -2.180   0.
 library(car)
 vif(mod_prec_sent)
 
-# 6.4.1 The 20 latent themes of precariousness -------
 
-#1. Estimating the Effects
-#The "engine" that calculates these relationships is the estimateEffect function. You define the formula where the 20 topics are the dependent variables and the predicted emotions are the independent variables (covariates):
-K <- 20
-
-effects_emopred_ungrp <- estimateEffect(1:K ~ admiration_pred + amusement_pred + anger_pred + annoyance_pred + approval_pred + caring_pred + confusion_pred + curiosity_pred + desire_pred + disappointment_pred + disapproval_pred + disgust_pred + embarrassment_pred + excitement_pred + fear_pred + gratitude_pred + grief_pred + joy_pred + love_pred + nervousness_pred + optimism_pred + pride_pred + neutral_pred,  
-                                        stmobj = m_ungrp_predemo,
-                                        metadata = data, 
-                                        uncertainty = "Global")
-
-effects_emopred_grp <- estimateEffect(1:K ~ sentiment_group,  
-                                      stmobj = m_grp_predemo,
-                                      metadata = data, 
-                                      uncertainty = "Global")
-
-effects_emopred_ungrp <- estimateEffect(1:K ~ admiration_pred + ... + disappointment_pred + sadness_pred + anger_pred + ...,  
-                                        stmobj = m_ungrp_predemo,
-                                        metadata = data, 
-                                        uncertainty = "Global")
-#2. The Quantitative Summary (Your Primary Check)
-#The actual numerical verification for your claims about Disappointment, Sadness, and Anger happens here:
-  
-summary_effects_emopred_ungrp <- capture.output((summary(effects_emopred_ungrp, topic = 1:20)), sep = "\n")
-print(summary_effects_emopred_ungrp)
-
-
-#4. sentiment groups con emozioni discrete ---------
-library(readxl)
-library(dplyr)
-library(broom)
-
-df <- read_xlsx("~/Desktop/Tesi/file_r/data/df_complete_3.xlsx")
-nested_df_topics <- readRDS("/Users/macpro/Desktop/Tesi/file_r/Rev_STM 2/Processed_data/DiLiberatorePro/nested_dataframe_topics_proportions_DiLiberatore.rds")
-
-emotions <- c("admiration_pred", "amusement_pred", "anger_pred", "annoyance_pred", 
-              "approval_pred", "caring_pred", "confusion_pred", "curiosity_pred", 
-              "desire_pred", "disappointment_pred", "disapproval_pred", "disgust_pred", 
-              "embarrassment_pred", "excitement_pred", "fear_pred", "gratitude_pred", 
-              "grief_pred", "joy_pred", "love_pred", "nervousness_pred", "optimism_pred", 
-              "pride_pred", "neutral_pred")
-
-df_emotions <- df |> select(ID, all_of(emotions))
-
-nested_binary <- inner_join(nested_df_topics, df_emotions, by = "ID")
-
-for (i in 1:20) {
-  topic_col <- paste0("Topic", i)
-  nested_binary[[topic_col]] <- ifelse(nested_binary[[topic_col]] < 0.1, 0, 1)
-}
-
-results_df <- data.frame()
-
-for (i in 1:20) {
-  topic_col <- paste0("Topic", i)
-  
-  formula_str <- paste(topic_col, "~", paste(emotions, collapse = " + "))
-  
-  mod <- glm(as.formula(formula_str), data = nested_binary, family = binomial)
-  
-  mod_tidy <- tidy(mod) |>
-    filter(term != "(Intercept)") |>
-    mutate(Topic = topic_col)
-  
-  results_df <- bind_rows(results_df, mod_tidy)
-}
-
-significant_effects <- results_df |>
-  filter(p.value < 0.05) |>
-  arrange(Topic, p.value)
-
-print(significant_effects)
 
 # 5 - testing stm vs emotions dataset -----
 # By uncovering latent themes in the open-ended answers, STM allows us to connect specific emotional profiles (e.g. sadness vs. anger) to concrete
 # topics of precariousness (such as low wages, inability to leave the parental home or the
 
-load("/Users/macpro/Desktop/Tesi/file_r/Rev_STM 2/Processed_data/environment_diLiberatore")
-df_iniziale <- read_xlsx("~/Desktop/Tesi/file_r/data/df_complete_3.xlsx")
+load("/Users/macpro/Desktop/UNIVERSITA/Tomasi-tesi/scripts/STM/data/environment_diLiberatore")
+df_iniziale <- read_xlsx("/Users/macpro/Desktop/UNIVERSITA/Tomasi-tesi/scripts/analysis/data/merged_BERT_survey.xlsx")
 
 library(dplyr)
 
@@ -960,7 +889,7 @@ library(readxl)
 library(ggplot2)
 library(dplyr)
 
-df <- read_xlsx("~/Desktop/Tesi/file_r/data/df_complete_3.xlsx")
+df <- read_xlsx("~/Users/macpro/Desktop/UNIVERSITA/Tomasi-tesi/scripts/analysis/data/merged_BERT_survey.xlsx")
 
 # Create exact bins
 df_binned <- df %>%

@@ -11,14 +11,14 @@ The main objective of the project is the analysis of emotions in text using thre
 
 The `tesi` root folder is organized into the following main sub-directories:
 
-### 1. `/componential_model`
-Contains the Python-based implementation, training, and inference for the multi-label classification model (based on GoEmotions/Emobank).
+### 1. `/dimensional_model`
+Contains the Python-based implementation, training, and inference for the VAD regression model (based on EmoBank/Warriner).
 * `/data`: Original datasets.
 * script that you need to imported in Google Colab to use GPU
+Please note that here we create [text](scripts/analysis/data/english_documents_cleaned.xlsx) that will be used in componential_model
 
-### 2. `/dimensional_model`
-Contains the Python-based implementation, training, and inference for the VAD regression model (based on EmoBank/Warriner).
-* Follows a similar internal structure to `/componential_model`.
+### 2. `/componential_model`
+Contains the Python-based implementation, training, and inference for the multi-label classification model (based on GoEmotions/Emobank).
 
 ### 3. `/stm`
 Contains the R-based project for Structural Topic Modeling. This analysis discovers latent themes in the text and models their relationship with metadata (e.g., prevalence of a topic based on an emotion).

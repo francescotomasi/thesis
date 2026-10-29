@@ -3,17 +3,27 @@
 Thumbs.db
 .idea/
 
-# --- Python ---
-# Ambienti virtuali
-#venv/
-#.venv/
-# Cache
-#__pycache__/
+# --- Python & Jupyter ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.ipynb_checkpoints/
 
 # --- R Project ---
-#.Rhistory
-#.RData
-#.Rproj.user/
+.Rhistory
+.RData
+.Rproj.user/
+
+# --- Modelli e pesi pesanti (>5MB) ---
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+**/models/
+checkpoint-*/
 
 # --- Cartelle ---
 bibliografia
